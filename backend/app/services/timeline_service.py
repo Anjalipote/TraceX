@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 import re
 from typing import List, Optional, Dict, Any
@@ -74,7 +75,7 @@ class TimelineService:
         Safely inspects plain text/log evidence files for timestamps and generates chronological events.
         Treats file strictly as read-only text.
         """
-        if not evidence.storage_path or not evidence.file_type == "log":
+        if not evidence.storage_path or evidence.file_type != "log" or not os.path.exists(evidence.storage_path):
             return []
 
         created_events = []

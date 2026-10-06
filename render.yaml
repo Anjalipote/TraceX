@@ -1,9 +1,11 @@
 # ==============================================================================
-# TraceX Forensic Platform — Render Blueprint (Automated Cloud Deployment)
+# TraceX Forensic Platform — Render Blueprint (Free Tier Compatible)
 # ==============================================================================
-# One-click deployment provisioning PostgreSQL, FastAPI backend, & React frontend.
 
 databases:
+  # ----------------------------------------------------------------------------
+  # PostgreSQL Database (Free Tier Managed Relational Database)
+  # ----------------------------------------------------------------------------
   - name: tracex-postgres
     databaseName: tracex_db
     user: tracex_user
@@ -13,7 +15,7 @@ databases:
 
 services:
   # ----------------------------------------------------------------------------
-  # 1. TraceX FastAPI Forensic Backend Engine
+  # 1. TraceX FastAPI Forensic Backend Engine (Free Web Service)
   # ----------------------------------------------------------------------------
   - type: web
     name: tracex-backend
@@ -23,10 +25,6 @@ services:
     plan: free
     region: oregon
     healthCheckPath: /health
-    disk:
-      name: evidence-vault
-      mountPath: /app/uploads
-      sizeGB: 1
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -46,13 +44,11 @@ services:
         value: '["*"]'
 
   # ----------------------------------------------------------------------------
-  # 2. TraceX React Forensic Dashboard Frontend
+  # 2. TraceX React Forensic Dashboard Frontend (Free Static Site)
   # ----------------------------------------------------------------------------
   - type: web
     name: tracex-frontend
     env: static
-    plan: free
-    region: oregon
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     headers:
@@ -67,7 +63,7 @@ services:
       - type: rewrite
         source: /api/*
         destination: https://tracex-backend.onrender.com/api/*
-      # SPA client routing fallback
+      # Single Page Application (SPA) routing fallback
       - type: rewrite
         source: /*
         destination: /index.html
