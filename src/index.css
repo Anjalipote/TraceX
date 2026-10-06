@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  html, body, #root {
+    min-height: 100vh;
+    background-color: #070A0F;
+    color: #F8FAFC;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.011em;
+  }
+
+  /* Ultra-clean minimal scrollbar */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1E293B;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3B82F6;
+  }
+}
+
+/* Subtle background textures */
+.forensic-grid {
+  background-image: 
+    linear-gradient(to right, rgba(30, 41, 59, 0.22) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(30, 41, 59, 0.22) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.forensic-dots {
+  background-image: radial-gradient(rgba(59, 130, 246, 0.12) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Sophisticated card surfaces with airy depth */
+.forensic-card {
+  background: #0B1017;
+  border: 1px solid rgba(30, 41, 59, 0.7);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+}
+
+.forensic-card-interactive {
+  background: #0B1017;
+  border: 1px solid rgba(30, 41, 59, 0.7);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.forensic-card-interactive:hover {
+  background: #0F1722;
+  border-color: rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+/* React Flow customizations for Dark Forensic UI */
+.react-flow__background {
+  background-color: #070A0F !important;
+}
+
+.react-flow__controls {
+  box-shadow: none !important;
+  border: 1px solid #1E293B !important;
+  background: #0B1017 !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  background: #0B1017 !important;
+  border-bottom: 1px solid #1E293B !important;
+  color: #94A3B8 !important;
+  fill: #94A3B8 !important;
+}
+
+.react-flow__controls-button:hover {
+  background: #111923 !important;
+  color: #3B82F6 !important;
+  fill: #3B82F6 !important;
+}
+
+.react-flow__edge-path {
+  stroke: #3B82F6 !important;
+  stroke-width: 2 !important;
+}
