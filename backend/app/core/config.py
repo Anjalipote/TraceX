@@ -2,21 +2,20 @@ import os
 import json
 import logging
 from typing import List, Union
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger("tracex.config")
 
-def normalize_database_url() -> str:
-    raw_url = os.getenv("DATABASE_URL", "").strip()
-    if not raw_url:
+def normalize_database_url(raw_url: Union[str, None] = None) -> str:
+    url = (raw_url or os.getenv("DATABASE_URL", "")).strip()
+    if not url:
         default_sqlite = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "tracex.db"))
         return f"sqlite:///{default_sqlite}"
-    # Standardize postgresql dialect for SQLAlchemy 2.0 with psycopg2
-    if raw_url.startswith("postgres://"):
-        return raw_url.replace("postgres://", "postgresql+psycopg2://", 1)
-    if raw_url.startswith("postgresql://") and not raw_url.startswith("postgresql+"):
-        return raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
-    return raw_url
+    # Standardize legacy postgres:// prefix to standard postgresql:// for SQLAlchemy 2.0
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql://", 1)
+    return url
 
 def parse_cors_origins() -> List[str]:
     raw = os.getenv("BACKEND_CORS_ORIGINS")
@@ -50,6 +49,11 @@ class Settings(BaseSettings):
     
     # Database - PostgreSQL by default, with automatic fallback for SQLite in local test environments
     DATABASE_URL: str = normalize_database_url()
+    
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def validate_database_url(cls, v: Union[str, None]) -> str:
+        return normalize_database_url(v)
     
     # Safe Evidence Storage (strictly inert, non-executable storage)
     UPLOAD_DIR: str = os.getenv(
