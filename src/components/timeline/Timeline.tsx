@@ -44,19 +44,39 @@ export const Timeline: React.FC<TimelineProps> = ({ initialFilter = 'ALL' }) => 
   }, []);
 
   const effectiveSearch = globalSearch || localSearch;
+  const suspiciousCount = timeline.filter(e => e.isSuspicious).length;
+  const hasSuspiciousActivity = suspiciousCount > 0;
 
-  const primaryCluster = activityClusters[0] || {
-    id: 'cluster-primary',
-    title: 'Primary Exfiltration & Anti-Forensic Sequence',
-    description: 'Correlated activity window showing unauthorized physical storage attachment immediately followed by classified file duplication, malware invocation, and audit trail truncation.',
-    confidence: 'High',
-    sequenceSummary: '09:45 USB Connected → 09:47 Sensitive File Accessed → 09:48 File Copied to Removable Drive → 09:50 Suspicious Binary Observed → 09:55 Files Deleted / Anti-Forensics',
-    eventIds: ['evt-003', 'evt-004', 'evt-005', 'evt-006', 'evt-008']
+  const defaultCleanCluster = {
+    id: 'cluster-clean',
+    title: 'Normal Operational Event Baseline',
+    description: 'All chronologically recorded events conform to authorized system baselines. Zero unauthorized device connections, disguised executables, or anti-forensic deletions detected.',
+    confidence: '100%',
+    sequenceSummary: 'Clean Baseline Verified',
+    eventIds: []
   };
+
+  const primaryCluster = activityClusters[0] || (hasSuspiciousActivity ? {
+    id: 'cluster-primary',
+    title: 'Correlated Anomaly Sequence',
+    description: 'Chronological telemetry sequence exhibiting correlated anomalous indicators.',
+    confidence: 'High',
+    sequenceSummary: 'Suspicious Telemetry Sequence',
+    eventIds: timeline.filter(e => e.isSuspicious).map(e => e.id)
+  } : defaultCleanCluster);
 
   const clusterEventIds = primaryCluster.eventIds && primaryCluster.eventIds.length > 0 
     ? primaryCluster.eventIds 
-    : ['evt-003', 'evt-004', 'evt-005', 'evt-006', 'evt-008'];
+    : (hasSuspiciousActivity ? timeline.filter(e => e.isSuspicious).map(e => e.id) : []);
+
+  // Parse sequence items dynamically from cluster sequenceSummary or timeline events
+  const sequenceItems: string[] = primaryCluster.sequenceSummary && primaryCluster.sequenceSummary.includes('→')
+    ? primaryCluster.sequenceSummary.split('→').map(s => s.trim())
+    : (hasSuspiciousActivity
+        ? timeline.filter(e => e.isSuspicious).slice(0, 5).map(e => `${e.timeFormatted.slice(0, 5)} ${e.title}`)
+        : (timeline.length > 0 
+            ? timeline.slice(0, 4).map(e => `${e.timeFormatted.slice(0, 5)} ${e.title}`)
+            : ['No events ingested yet']));
 
   const categories = [
     { id: 'ALL', label: 'ALL EVENTS', icon: Clock },
@@ -92,8 +112,6 @@ export const Timeline: React.FC<TimelineProps> = ({ initialFilter = 'ALL' }) => 
     return matchesCategory && matchesSearch;
   });
 
-  const suspiciousCount = timeline.filter(e => e.isSuspicious).length;
-
   return (
     <div className="space-y-6">
       {/* Phase 3 Correlated Activity Sequence Banner */}
@@ -111,7 +129,11 @@ export const Timeline: React.FC<TimelineProps> = ({ initialFilter = 'ALL' }) => 
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setFilterClusterOnly(!filterClusterOnly)}
+              onClick={() => {
+                if (hasSuspiciousActivity) {
+                  setFilterClusterOnly(!filterClusterOnly);
+                }
+              }}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-semibold flex items-center gap-2 transition-all border ${
                 filterClusterOnly
                   ? 'bg-blue-600 text-white border-blue-500 shadow-md'
@@ -119,7 +141,13 @@ export const Timeline: React.FC<TimelineProps> = ({ initialFilter = 'ALL' }) => 
               }`}
             >
               <Filter className="w-3.5 h-3.5" />
-              <span>{filterClusterOnly ? 'Showing Correlated Sequence (5 Events)' : 'Filter to Correlated Sequence'}</span>
+              <span>
+                {hasSuspiciousActivity
+                  ? filterClusterOnly
+                    ? `Showing Correlated Sequence (${clusterEventIds.length} Events)`
+                    : 'Filter to Correlated Sequence'
+                  : 'All Events Verified Clean'}
+              </span>
               {filterClusterOnly && <X className="w-3 h-3 ml-1" />}
             </button>
           </div>
@@ -137,15 +165,20 @@ export const Timeline: React.FC<TimelineProps> = ({ initialFilter = 'ALL' }) => 
         {/* Sequence Flow Chain */}
         <div className="p-3 rounded-xl bg-[#080D15] border border-[#1E293B] flex items-center gap-2 overflow-x-auto text-xs font-mono text-[#94A3B8]">
           <span className="text-[#64748B] shrink-0 font-bold uppercase text-[10px]">Sequence:</span>
-          <span className="px-2 py-1 rounded bg-[#0B1017] border border-amber-500/30 text-amber-300 shrink-0">09:45 USB Connected</span>
-          <span className="text-blue-500 shrink-0">→</span>
-          <span className="px-2 py-1 rounded bg-[#0B1017] border border-red-500/30 text-red-300 shrink-0">09:47 Sensitive File Read</span>
-          <span className="text-blue-500 shrink-0">→</span>
-          <span className="px-2 py-1 rounded bg-[#0B1017] border border-red-500/30 text-red-300 shrink-0">09:48 File Duplication</span>
-          <span className="text-blue-500 shrink-0">→</span>
-          <span className="px-2 py-1 rounded bg-[#0B1017] border border-red-500/30 text-red-300 shrink-0">09:50 Unsigned Binary</span>
-          <span className="text-blue-500 shrink-0">→</span>
-          <span className="px-2 py-1 rounded bg-[#0B1017] border border-red-500/30 text-red-300 shrink-0">09:55 VSS Purge</span>
+          {sequenceItems.map((item, idx) => (
+            <React.Fragment key={idx}>
+              {idx > 0 && <span className="text-blue-500 shrink-0">→</span>}
+              <span className={`px-2 py-1 rounded bg-[#0B1017] border shrink-0 ${
+                hasSuspiciousActivity
+                  ? idx === 0 
+                    ? 'border-amber-500/30 text-amber-300' 
+                    : 'border-red-500/30 text-red-300'
+                  : 'border-emerald-500/30 text-emerald-300'
+              }`}>
+                {item}
+              </span>
+            </React.Fragment>
+          ))}
         </div>
 
         {/* Forensic Activity Phase Grouping (Final Forensic Enhancement) */}

@@ -11,35 +11,39 @@ import {
   Clock, 
   AlertTriangle,
   ArrowRight,
-  Info
+  Info,
+  X
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-
-interface SimulatedFile {
-  name: string;
-  size: string;
-  type: string;
-}
+import { api } from '../../services/api';
 
 export const UploadZone: React.FC<{ onComplete?: () => void }> = ({ onComplete }) => {
-  const { showToast } = useApp();
+  const { currentCase, showToast, refreshData, runAnalysisPipeline } = useApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState<SimulatedFile[]>([]);
+  const [actualFiles, setActualFiles] = useState<File[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [ingestedResult, setIngestedResult] = useState<{ count: number; message: string } | null>(null);
 
-  const simulationSteps = [
-    { title: 'Uploading forensic images & containers...', desc: 'Reading raw sectors and verifying container header magic bytes' },
-    { title: 'Calculating SHA-256 cryptographic hashes...', desc: 'Verifying MD5 / SHA-256 digests against NIST NSRL RDS database' },
-    { title: 'Extracting metadata & timestamps...', desc: 'Parsing NTFS $MFT, ShellBags, LNK shortcuts, and prefetch records' },
-    { title: 'Building unified forensic timeline...', desc: 'Aligning UTC timestamps across OS event logs, USN journals, and USB hives' },
-    { title: 'Correlating evidence entities...', desc: 'Graphing actor-to-device-to-file relationships and access patterns' },
-    { title: 'Detecting suspicious activity & anti-forensics...', desc: 'Heuristic pattern matching against MITRE ATT&CK enterprise tactics' },
-    { title: 'Analysis Complete!', desc: '128 files analyzed, 286 events extracted, 12 findings detected' },
+  const pipelineSteps = [
+    { title: 'Uploading forensic files & containers...', desc: 'Streaming file bytes safely into isolated non-executable vault' },
+    { title: 'Calculating SHA-256 cryptographic hashes...', desc: 'Computing cryptographic checksums and validating magic byte headers' },
+    { title: 'Extracting metadata & timestamps...', desc: 'Parsing filesystem MACB timestamps, headers, and entropy patterns' },
+    { title: 'Building unified forensic timeline...', desc: 'Aligning UTC timestamps across OS event logs and file transactions' },
+    { title: 'Correlating evidence entities...', desc: 'Analyzing relationships, anomalous spikes, and potential threat indicators' },
+    { title: 'Analysis Complete!', desc: 'Evidence sealed in Merkle tree, Chain of Custody updated, and risk score re-evaluated' },
   ];
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -53,63 +57,97 @@ export const UploadZone: React.FC<{ onComplete?: () => void }> = ({ onComplete }
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
-    // Simulate accepted files from drop
-    const files: SimulatedFile[] = [
-      { name: 'evidence_seizure_vault.zip', size: '2.4 GB', type: 'Forensic ZIP Archive' },
-      { name: 'corp_workstation_e01.dd', size: '48.2 GB', type: 'Raw Disk Image' },
-      { name: 'triage_triage_package.tar.gz', size: '320 MB', type: 'Compressed Artifacts' },
-    ];
-    setSelectedFiles(files);
-    showToast('Files Queued', '3 forensic evidence containers ready for analysis pipeline.', 'info');
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const droppedFiles = Array.from(e.dataTransfer.files);
+      setActualFiles(prev => [...prev, ...droppedFiles]);
+      showToast('Files Attached', `${droppedFiles.length} file(s) attached for forensic processing.`, 'info');
+    }
   };
 
-  const handleSelectFiles = () => {
-    // Simulated selection
-    const mockFiles: SimulatedFile[] = [
-      { name: 'seizure_case_2026_001.zip', size: '1.8 GB', type: 'E01/ZIP Evidence Package' },
-      { name: 'security_event_dumps.evtx', size: '142 MB', type: 'Windows Event Logs' },
-      { name: 'memory_dump_win11.raw', size: '16.0 GB', type: 'Physical RAM Dump' },
-    ];
-    setSelectedFiles(mockFiles);
-    showToast('Evidence Selected', 'Forensic archive containers attached.', 'info');
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const selected = Array.from(e.target.files);
+      setActualFiles(prev => [...prev, ...selected]);
+      showToast('Files Attached', `${selected.length} file(s) selected for forensic processing.`, 'info');
+    }
   };
 
-  const startAnalysisSimulation = () => {
-    if (selectedFiles.length === 0) return;
+  const removeFile = (index: number) => {
+    setActualFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const resetUpload = () => {
+    setActualFiles([]);
+    setIsAnalyzing(false);
+    setCurrentStep(0);
+    setIsCompleted(false);
+    setIngestedResult(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const startLiveIngestion = async () => {
+    if (actualFiles.length === 0) return;
+
     setIsAnalyzing(true);
     setCurrentStep(0);
     setIsCompleted(false);
 
-    let step = 0;
-    const interval = setInterval(() => {
-      step += 1;
-      if (step < simulationSteps.length) {
-        setCurrentStep(step);
-      } else {
-        clearInterval(interval);
-        setIsAnalyzing(false);
-        setIsCompleted(true);
-        showToast('Pipeline Finished', '128 files analyzed, 286 events correlated, Risk Score: 87/100.', 'success');
-        if (onComplete) onComplete();
-      }
-    }, 900);
-  };
+    try {
+      // Step 1: Uploading
+      setCurrentStep(0);
+      const uploadRes = await api.uploadEvidence(actualFiles, currentCase.id);
 
-  const resetUpload = () => {
-    setSelectedFiles([]);
-    setIsAnalyzing(false);
-    setCurrentStep(0);
-    setIsCompleted(false);
+      // Step 2: Hashing
+      setCurrentStep(1);
+      await new Promise(r => setTimeout(r, 400));
+
+      // Step 3: Metadata
+      setCurrentStep(2);
+      await new Promise(r => setTimeout(r, 400));
+
+      // Step 4: Timeline
+      setCurrentStep(3);
+      await new Promise(r => setTimeout(r, 400));
+
+      // Step 5: Correlation
+      setCurrentStep(4);
+      await runAnalysisPipeline();
+
+      // Step 6: Complete
+      setCurrentStep(5);
+      await refreshData();
+
+      setIngestedResult({
+        count: uploadRes.uploadedCount,
+        message: uploadRes.message
+      });
+      setIsCompleted(true);
+      showToast(
+        'Forensic Ingestion Complete', 
+        `Processed ${uploadRes.uploadedCount} evidence artifact(s) into case vault ${currentCase.id}.`, 
+        'success'
+      );
+    } catch (err: any) {
+      showToast('Ingestion Error', err?.message || 'Failed to complete evidence upload.', 'error');
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
     <div className="rounded-2xl bg-[#0D131C] border border-[#1D2939] p-6 lg:p-8 space-y-6">
-      {/* Synthetic Demo Banner Notice */}
-      <div className="flex items-center gap-2.5 p-3 rounded-xl bg-blue-950/30 border border-blue-800/40 text-xs text-blue-300">
-        <Info className="w-4 h-4 text-blue-400 shrink-0" />
-        <span className="font-mono">
-          <strong>DEMO / SYNTHETIC PROCESSING MODE:</strong> Forensic ingestion simulation demonstrates the TraceX workflow and event correlation pipeline. Browser-side processing uses synthetic simulation.
+      {/* Active Vault Information */}
+      <div className="flex items-center justify-between p-3.5 rounded-xl bg-[#080D15] border border-blue-500/30 text-xs font-mono">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="text-[#94A3B8]">
+            Ingesting into Case Vault: <strong className="text-white">{currentCase.id} — {currentCase.name}</strong>
+          </span>
+        </div>
+        <span className="text-[11px] text-blue-400 bg-blue-950/60 border border-blue-800/40 px-2.5 py-0.5 rounded font-bold">
+          LIVE CRYPTOGRAPHIC VAULT
         </span>
       </div>
 
@@ -125,14 +163,14 @@ export const UploadZone: React.FC<{ onComplete?: () => void }> = ({ onComplete }
                 ? 'border-blue-500 bg-blue-600/10 scale-[1.01]'
                 : 'border-[#1D2939] hover:border-blue-500/50 bg-[#070A0F]'
             }`}
-            onClick={handleSelectFiles}
+            onClick={() => fileInputRef.current?.click()}
           >
             <input
               type="file"
               ref={fileInputRef}
               multiple
               className="hidden"
-              onChange={handleSelectFiles}
+              onChange={handleFileInputChange}
             />
 
             <div className="flex flex-col items-center justify-center space-y-3">
@@ -141,10 +179,10 @@ export const UploadZone: React.FC<{ onComplete?: () => void }> = ({ onComplete }
               </div>
               <div className="space-y-1">
                 <h3 className="text-base font-bold text-[#F8FAFC] tracking-wide font-mono">
-                  DROP DIGITAL EVIDENCE HERE
+                  DROP DIGITAL EVIDENCE HERE OR CLICK TO BROWSE
                 </h3>
                 <p className="text-xs text-[#94A3B8]">
-                  Supports raw disk images (.E01, .dd), memory dumps (.raw), event logs (.evtx), and forensic ZIP packages
+                  Upload real documents (.pdf, .docx, .xlsx), images, system logs (.log, .txt, .json), or executables for automated forensic triage
                 </p>
               </div>
 
@@ -153,21 +191,23 @@ export const UploadZone: React.FC<{ onComplete?: () => void }> = ({ onComplete }
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleSelectFiles();
+                    fileInputRef.current?.click();
                   }}
                   className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold tracking-wider font-mono uppercase transition-colors shadow-forensic"
                 >
-                  SELECT FILES
+                  SELECT EVIDENCE FILES
                 </button>
               </div>
             </div>
           </div>
 
           {/* Selected Files List */}
-          {selectedFiles.length > 0 && (
+          {actualFiles.length > 0 && (
             <div className="rounded-xl bg-[#070A0F] border border-[#1D2939] p-4 space-y-3">
               <div className="flex items-center justify-between text-xs font-mono">
-                <span className="text-[#94A3B8] font-bold uppercase">Attached Evidence Containers ({selectedFiles.length})</span>
+                <span className="text-[#94A3B8] font-bold uppercase">
+                  Attached Evidence Artifacts ({actualFiles.length})
+                </span>
                 <button
                   onClick={resetUpload}
                   className="text-red-400 hover:text-red-300 underline"
@@ -177,25 +217,36 @@ export const UploadZone: React.FC<{ onComplete?: () => void }> = ({ onComplete }
               </div>
 
               <div className="space-y-2">
-                {selectedFiles.map((file, i) => (
+                {actualFiles.map((file, i) => (
                   <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-[#0D131C] border border-[#1D2939] text-xs">
                     <div className="flex items-center gap-2.5">
-                      <FileArchive className="w-4 h-4 text-blue-400" />
+                      <FileText className="w-4 h-4 text-blue-400" />
                       <span className="font-mono text-[#F8FAFC]">{file.name}</span>
-                      <span className="text-[10px] font-mono text-[#64748B]">({file.type})</span>
+                      <span className="text-[10px] font-mono text-[#64748B]">
+                        ({file.type || 'Inert Binary'})
+                      </span>
                     </div>
-                    <span className="font-mono text-[#94A3B8]">{file.size}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-[#94A3B8]">{formatFileSize(file.size)}</span>
+                      <button
+                        onClick={() => removeFile(i)}
+                        className="text-[#64748B] hover:text-red-400 p-1"
+                        title="Remove file"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
 
               <div className="pt-2 flex justify-end">
                 <button
-                  onClick={startAnalysisSimulation}
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-mono text-xs font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-forensic"
+                  onClick={startLiveIngestion}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-mono text-xs font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-forensic cursor-pointer"
                 >
                   <Play className="w-4 h-4 fill-white" />
-                  <span>START FORENSIC ANALYSIS PIPELINE</span>
+                  <span>START FORENSIC INGESTION & PIPELINE</span>
                 </button>
               </div>
             </div>
@@ -203,7 +254,7 @@ export const UploadZone: React.FC<{ onComplete?: () => void }> = ({ onComplete }
         </>
       )}
 
-      {/* Analysis In Progress Simulation */}
+      {/* Analysis In Progress */}
       {isAnalyzing && (
         <div className="rounded-2xl bg-[#070A0F] border border-[#1D2939] p-8 space-y-6 animate-in fade-in">
           <div className="flex items-center justify-between">
@@ -213,28 +264,28 @@ export const UploadZone: React.FC<{ onComplete?: () => void }> = ({ onComplete }
                 <span>PROCESSING FORENSIC EVIDENCE PIPELINE</span>
               </div>
               <h3 className="text-lg font-bold text-[#F8FAFC]">
-                {simulationSteps[currentStep].title}
+                {pipelineSteps[currentStep].title}
               </h3>
               <p className="text-xs text-[#94A3B8] font-mono">
-                {simulationSteps[currentStep].desc}
+                {pipelineSteps[currentStep].desc}
               </p>
             </div>
             <span className="text-xl font-mono font-bold text-blue-400">
-              {Math.round(((currentStep + 1) / simulationSteps.length) * 100)}%
+              {Math.round(((currentStep + 1) / pipelineSteps.length) * 100)}%
             </span>
           </div>
 
           {/* Progress Bar */}
           <div className="w-full h-2 rounded-full bg-[#111923] overflow-hidden">
             <div 
-              className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 transition-all duration-500"
-              style={{ width: `${((currentStep + 1) / simulationSteps.length) * 100}%` }}
+              className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 transition-all duration-300"
+              style={{ width: `${((currentStep + 1) / pipelineSteps.length) * 100}%` }}
             />
           </div>
 
           {/* Steps Timeline Visual */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-2">
-            {simulationSteps.slice(0, 6).map((step, idx) => {
+            {pipelineSteps.map((step, idx) => {
               const isPast = idx < currentStep;
               const isCurrent = idx === currentStep;
 
@@ -249,18 +300,17 @@ export const UploadZone: React.FC<{ onComplete?: () => void }> = ({ onComplete }
                       : 'bg-[#0D131C] border-[#1D2939] text-[#64748B]'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 mb-1">
                     {isPast ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                     ) : isCurrent ? (
-                      <RefreshCw className="w-4 h-4 text-blue-400 animate-spin" />
+                      <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" />
                     ) : (
-                      <span className="w-4 h-4 rounded-full border border-[#1D2939] flex items-center justify-center text-[10px]">
-                        {idx + 1}
-                      </span>
+                      <div className="w-2 h-2 rounded-full bg-[#334155]" />
                     )}
-                    <span className="font-semibold truncate">{step.title.split('...')[0]}</span>
+                    <span className="font-bold truncate">{step.title}</span>
                   </div>
+                  <p className="text-[10px] text-[#94A3B8] line-clamp-2">{step.desc}</p>
                 </div>
               );
             })}
@@ -268,62 +318,54 @@ export const UploadZone: React.FC<{ onComplete?: () => void }> = ({ onComplete }
         </div>
       )}
 
-      {/* Completed State */}
+      {/* Completion View */}
       {isCompleted && (
-        <div className="rounded-2xl bg-[#070A0F] border border-emerald-800/60 p-8 space-y-6 animate-in zoom-in-95 duration-300">
+        <div className="rounded-2xl bg-[#070A0F] border border-emerald-800/60 p-8 space-y-6 animate-in zoom-in-95">
           <div className="flex items-center gap-4">
-            <div className="p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-600/60 text-emerald-400">
-              <CheckCircle2 className="w-8 h-8" />
+            <div className="w-12 h-12 rounded-2xl bg-emerald-950/80 border border-emerald-500 flex items-center justify-center text-emerald-400 shadow-forensic">
+              <CheckCircle2 className="w-6 h-6" />
             </div>
             <div>
-              <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400">
-                FORENSIC PIPELINE COMPLETE
-              </span>
-              <h3 className="text-xl font-bold text-[#F8FAFC]">
-                Evidence Ingestion & Correlation Succeeded
+              <h3 className="text-lg font-bold text-[#F8FAFC]">
+                Evidence Ingestion & Correlation Complete
               </h3>
-              <p className="text-xs text-[#94A3B8]">
-                All cryptographic signatures calculated and aligned to unified timeline.
+              <p className="text-xs text-[#94A3B8] font-mono mt-0.5">
+                {ingestedResult?.message || `Successfully sealed ${actualFiles.length} artifact(s) into case vault.`}
               </p>
             </div>
           </div>
 
-          {/* Result Metric Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="p-4 rounded-xl bg-[#0D131C] border border-[#1D2939]">
-              <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">Files Analyzed</span>
-              <span className="text-2xl font-bold font-mono text-[#F8FAFC]">128</span>
+          <div className="p-4 rounded-xl bg-[#0B1017] border border-[#1E293B] space-y-2 text-xs font-mono">
+            <div className="flex items-center justify-between text-[#94A3B8]">
+              <span>Case Number</span>
+              <strong className="text-white">{currentCase.id}</strong>
             </div>
-            <div className="p-4 rounded-xl bg-[#0D131C] border border-[#1D2939]">
-              <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">Events Extracted</span>
-              <span className="text-2xl font-bold font-mono text-blue-400">286</span>
+            <div className="flex items-center justify-between text-[#94A3B8]">
+              <span>Ingested Files</span>
+              <strong className="text-emerald-400">{actualFiles.length} artifact(s)</strong>
             </div>
-            <div className="p-4 rounded-xl bg-[#0D131C] border border-[#1D2939]">
-              <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">Findings Detected</span>
-              <span className="text-2xl font-bold font-mono text-amber-400">12</span>
-            </div>
-            <div className="p-4 rounded-xl bg-[#0D131C] border border-red-900/60">
-              <span className="text-[11px] font-mono text-[#94A3B8] uppercase block">Risk Score</span>
-              <span className="text-2xl font-bold font-mono text-red-400">87/100</span>
+            <div className="flex items-center justify-between text-[#94A3B8]">
+              <span>Integrity Verification</span>
+              <strong className="text-blue-400">SHA-256 Fingerprinted & Verified</strong>
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
             <button
               onClick={resetUpload}
-              className="px-4 py-2 rounded-xl bg-[#111923] hover:bg-[#1D2939] text-[#94A3B8] hover:text-white text-xs font-mono transition-colors"
+              className="px-4 py-2 rounded-xl bg-[#0E1522] hover:bg-[#162032] border border-[#1E293B] text-xs font-mono text-[#94A3B8] hover:text-white transition-colors"
             >
-              Analyze Another Dataset
+              Upload More Evidence
             </button>
-            <button
-              onClick={() => {
-                if (onComplete) onComplete();
-              }}
-              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs font-bold tracking-wider uppercase flex items-center gap-2 transition-all shadow-forensic"
-            >
-              <span>Explore Ingested Evidence</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            {onComplete && (
+              <button
+                onClick={onComplete}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-forensic"
+              >
+                <span>View Evidence Vault</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       )}

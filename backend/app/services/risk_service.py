@@ -58,8 +58,8 @@ class RiskService:
         # Timeline dimension: suspicious timeline events
         timeline_contribution = min(len(suspicious_events) * 5, 15)
 
-        # IF CASE HAS NO FINDINGS, NO ANOMALIES, NO TAMPERING, NO SUSPICIOUS EVENTS:
-        if case.case_number != "CASE-2026-001" and not findings and not anomalies and tampered_count == 0 and not suspicious_events and evidence_contribution == 0:
+        # IF CASE HAS NO FINDINGS, NO ANOMALIES, NO TAMPERING, NO SUSPICIOUS EVENTS, NO RISK FACTORS:
+        if not findings and not anomalies and tampered_count == 0 and not suspicious_events and evidence_contribution == 0 and not factors:
             total_score = 0
             risk_level = "NO RISK"
             status_label = "Clean Baseline (Zero Threats Detected)"
@@ -77,34 +77,32 @@ class RiskService:
             )
             recommendation = "No investigative action required. Ingested artifacts are consistent with normal, authorized baseline behavior."
         else:
-            if case.case_number == "CASE-2026-001":
-                total_score = 87
-                risk_level = "CRITICAL"
-                status_label = "Urgent Investigation Priority (High Confidence)"
+            if factors:
+                total_score = min(sum(rf.score for rf in factors) + integrity_contribution, 100)
             else:
                 total_score = min(
                     severity_contribution + evidence_contribution + correlation_contribution +
                     anomaly_contribution + timeline_contribution + integrity_contribution,
                     100
                 )
-                if (findings or anomalies) and total_score == 0:
-                    total_score = 25
+            if (findings or anomalies) and total_score == 0:
+                total_score = 25
 
-                if total_score >= 80:
-                    risk_level = "CRITICAL"
-                    status_label = "Urgent Investigation Priority (High Confidence)"
-                elif total_score >= 60:
-                    risk_level = "HIGH"
-                    status_label = "Escalated Investigation Advised"
-                elif total_score >= 40:
-                    risk_level = "MEDIUM"
-                    status_label = "Standard DFIR Review"
-                elif total_score > 0:
-                    risk_level = "LOW"
-                    status_label = "Routine Monitoring"
-                else:
-                    risk_level = "NO RISK"
-                    status_label = "Clean Baseline"
+            if total_score >= 80:
+                risk_level = "CRITICAL"
+                status_label = "Urgent Investigation Priority (High Confidence)"
+            elif total_score >= 60:
+                risk_level = "HIGH"
+                status_label = "Escalated Investigation Advised"
+            elif total_score >= 40:
+                risk_level = "MEDIUM"
+                status_label = "Standard DFIR Review"
+            elif total_score > 0:
+                risk_level = "LOW"
+                status_label = "Routine Monitoring"
+            else:
+                risk_level = "NO RISK"
+                status_label = "Clean Baseline"
 
             categories = {}
             for f in findings:

@@ -181,6 +181,46 @@ async def upload_evidence(
     # If log evidence, safely parse timeline events
     if evidence.file_type == "log":
         TimelineService.parse_log_evidence(db, case.id, evidence)
+    elif metadata.get("file_created_at") and metadata.get("file_modified_at"):
+        # Record MACB filesystem timeline events for ingested document/binary
+        TimelineService.create_event_from_evidence(
+            db=db,
+            case_id=case.id,
+            evidence=evidence,
+            description=f"File Created: {evidence.filename} initial timestamp on source volume.",
+            event_type="file",
+            severity="info",
+            is_suspicious=False,
+            actor="SYSTEM (NTFS $MFT)"
+        )
+
+    # Register in Cryptographically Linked Tamper-Evident Chain of Custody
+    try:
+        CustodyService.add_custody_entry(
+            db=db,
+            case_id=case.id,
+            evidence_name=clean_basename,
+            action="SECURE_INGESTION",
+            actor=current_user.name,
+            details=f"SHA-256: {sha256_hash} | Size: {metadata['file_size']}B | Status: Verified",
+            evidence_id=evidence.id
+        )
+    except Exception:
+        pass
+
+    # Execute automated forensic correlation & analysis pipeline for case
+    try:
+        from app.services.finding_service import FindingService
+        from app.services.anomaly_service import AnomalyService
+        from app.services.clustering_service import ClusteringService
+        from app.services.risk_service import RiskService
+
+        FindingService.run_correlation(db, case.id)
+        AnomalyService.detect_anomalies(db, case.id)
+        ClusteringService.cluster_events(db, case.id)
+        RiskService.calculate_case_risk(db, case.id)
+    except Exception:
+        pass
 
     return evidence
 

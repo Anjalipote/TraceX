@@ -28,6 +28,7 @@ export const Topbar: React.FC = () => {
     currentCase, 
     cases, 
     selectCase, 
+    createCase,
     investigator, 
     isTampered, 
     searchQuery, 
@@ -230,13 +231,32 @@ export const Topbar: React.FC = () => {
                     </button>
                   ))}
                 </div>
-                <div className="pt-2 border-t border-[#1E293B]/60">
+                <div className="pt-2 border-t border-[#1E293B]/60 flex items-center justify-between px-2">
+                  <button
+                    onClick={() => {
+                      try {
+                        const newCase = createCase({
+                          name: `Live Investigation Vault #${cases.length + 1}`,
+                          investigator: investigator.name,
+                          description: 'Active digital evidence investigation vault for live artifact analysis.',
+                          targetSystem: 'WIN11-WORKSTATION-EVID'
+                        });
+                        setCaseMenuOpen(false);
+                        navigate('/evidence');
+                      } catch {
+                        navigate('/cases');
+                      }
+                    }}
+                    className="text-xs text-emerald-400 hover:text-emerald-300 font-mono font-bold py-1.5 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>+ New Clean Case</span>
+                  </button>
                   <Link
                     to="/cases"
                     onClick={() => setCaseMenuOpen(false)}
-                    className="block text-center py-2 text-xs text-blue-400 hover:text-blue-300 hover:underline font-mono"
+                    className="text-xs text-blue-400 hover:text-blue-300 hover:underline font-mono py-1.5"
                   >
-                    + Manage All Cases
+                    Manage Vaults →
                   </Link>
                 </div>
               </div>
