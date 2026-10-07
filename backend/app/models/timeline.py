@@ -17,6 +17,7 @@ class TimelineEvent(Base):
     source = Column(String(128), default="System Log")
     actor = Column(String(128), default="SYSTEM")
     is_suspicious = Column(Boolean, default=False, nullable=False)
+    is_live_agent = Column(Boolean, default=False, nullable=True)
     mitre_technique = Column(String(128), nullable=True)
     raw_log = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)

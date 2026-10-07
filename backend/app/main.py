@@ -10,13 +10,31 @@ from app.api import (
     risk, relationships, reports, pipeline, 
     clusters, anomalies, search, audit, 
     gaps, explainability, compare, users,
-    investigations
+    investigations, agent
 )
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Ensure all tables are created
     Base.metadata.create_all(bind=engine)
+    # Safe SQLite schema migration for added live agent columns
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            for table, col, col_def in [
+                ("evidence", "is_live_agent", "BOOLEAN DEFAULT 0"),
+                ("evidence", "baseline_sha256", "VARCHAR(64)"),
+                ("evidence", "pdf_diff_data", "TEXT"),
+                ("timeline_events", "is_live_agent", "BOOLEAN DEFAULT 0"),
+                ("findings", "is_live_agent", "BOOLEAN DEFAULT 0"),
+            ]:
+                try:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
+                    conn.commit()
+                except Exception:
+                    pass
+    except Exception:
+        pass
     yield
 
 OPENAPI_TAGS = [
@@ -96,6 +114,7 @@ app.include_router(gaps.router, prefix=settings.API_V1_STR)
 app.include_router(explainability.router, prefix=settings.API_V1_STR)
 app.include_router(users.router, prefix=settings.API_V1_STR)
 app.include_router(investigations.router, prefix=settings.API_V1_STR)
+app.include_router(agent.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 def root():

@@ -1,0 +1,11 @@
+{
+  "backend_url": "http://127.0.0.1:8000/api",
+  "case_id": "CASE-2026-001",
+  "monitored_paths": [
+    "./monitored_evidence"
+  ],
+  "heartbeat_interval_sec": 5,
+  "agent_version": "v2.5.0-win64",
+  "max_file_size_mb": 100,
+  "baseline_cache_dir": "./.tracex_baseline"
+}

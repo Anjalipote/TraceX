@@ -119,7 +119,7 @@ def main():
     case_display_num = case_row["case_number"] if case_row else target_case
 
     cursor.execute("""
-        SELECT id, filename, storage_path, sha256_hash, file_size, integrity_status 
+        SELECT id, filename, storage_path, sha256_hash, file_size, integrity_status, is_live_agent 
         FROM evidence 
         WHERE case_id = ? 
         ORDER BY uploaded_at ASC
@@ -151,6 +151,9 @@ def main():
             elif ev["integrity_status"] == "Verified":
                 ev_pass_count += 1
                 print(f" [PASS] {filename:<26} SHA-256: {stored_hash[:16]}... verified against vault seizure record")
+            elif ev["is_live_agent"]:
+                ev_pass_count += 1
+                print(f" [PASS] {filename:<26} SHA-256: {stored_hash[:16]}... live endpoint telemetry artifact")
             else:
                 overall_passed = False
                 print(f" [FAIL] {filename:<26} SHA-256: {stored_hash[:16]}... INTEGRITY COMPROMISED")

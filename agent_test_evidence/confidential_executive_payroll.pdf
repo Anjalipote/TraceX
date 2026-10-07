@@ -1,0 +1,43 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+5 0 obj
+<< /Length 483 >>
+stream
+BT /F1 12 Tf 50 720 Td (CONFIDENTIAL EXECUTIVE PAYROLL & COMPENSATION REPORT) Tj 0 -22 Td 50 698 Td (Host: EMP-LT-001) Tj 0 -22 Td 50 676 Td (Department: Finance & Core Engineering) Tj 0 -22 Td 50 654 Td (Employee Name: John Doe \(Senior Architect\)) Tj 0 -22 Td 50 632 Td (Routing Number: 999888777) Tj 0 -22 Td 50 610 Td (Account Number: 9876543210) Tj 0 -22 Td 50 588 Td (Annual Base Compensation: $350,000) Tj 0 -22 Td 50 566 Td (Authorized By: Board of Directors) Tj 0 -22 Td ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+7 0 obj
+<< /Length 316 >>
+stream
+BT /F1 12 Tf 50 720 Td (CRYPTOGRAPHIC RECORD & RETENTION POLICY) Tj 0 -22 Td 50 698 Td (Data Integrity: SHA-256 Validated Baseline) Tj 0 -22 Td 50 676 Td (Classification: Proprietary / Restricted Distribution) Tj 0 -22 Td 50 654 Td (Unauthorized disclosure or alteration is subject to forensic audit.) Tj 0 -22 Td ET
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000191 00000 n 
+0000000317 00000 n 
+0000000851 00000 n 
+0000000977 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1344
+%%EOF

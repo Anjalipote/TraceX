@@ -367,13 +367,17 @@ export const api = {
             riskScore: e.analysis_status === 'Flagged' ? 92 : 0,
             severity: e.analysis_status === 'Flagged' ? 'CRITICAL' : 'LOW',
             sha256: e.sha256_hash,
-            originalSha256: e.sha256_hash,
+            originalSha256: e.baseline_sha256 || e.sha256_hash,
             integrity: e.integrity_status.toUpperCase() as any,
             sourceLocation: e.source_device || 'WORKSTATION-CORP-FIN09',
             relatedEvents: [],
             relatedFindings: [],
             relatedGraphNodes: [],
-            description: e.notes || `Forensic artifact captured from ${e.source_device}. SHA-256 integrity verified.`
+            description: e.notes || `Forensic artifact captured from ${e.source_device}. SHA-256 integrity verified.`,
+            isLiveAgent: Boolean(e.is_live_agent),
+            baselineSha256: e.baseline_sha256 || undefined,
+            pdfDiffData: e.pdf_diff_data ? (typeof e.pdf_diff_data === 'string' ? JSON.parse(e.pdf_diff_data) : e.pdf_diff_data) : undefined,
+            source: e.is_live_agent ? 'LIVE AGENT' : (e.source || 'DEMO DATA')
           }));
         }
       }
@@ -436,12 +440,14 @@ export const api = {
             category: (e.event_type || 'SYSTEM').toUpperCase() as any,
             isSuspicious: e.is_suspicious,
             severity: e.severity.toUpperCase() as any,
-            sourceArtifact: e.source,
+            sourceArtifact: e.source || (e.is_live_agent ? 'LIVE AGENT' : 'SYSTEM'),
             evidenceId: e.evidence_id || 'ev-001',
             actor: e.actor || 'SYSTEM',
             relatedFindings: e.is_suspicious ? ['find-001'] : [],
             rawLogSnippet: e.raw_log || e.description,
-            mitreTechnique: e.mitre_technique
+            mitreTechnique: e.mitre_technique,
+            isLiveAgent: Boolean(e.is_live_agent),
+            source: e.is_live_agent ? 'LIVE AGENT' : (e.source || 'DEMO DATA')
           }));
         }
       }
@@ -481,7 +487,9 @@ export const api = {
             recommendedNextStep: f.recommended_next_step,
             supportingFactors: f.supporting_factors ? (typeof f.supporting_factors === 'string' ? JSON.parse(f.supporting_factors) : f.supporting_factors) : [],
             relatedEntities: f.related_entities ? (typeof f.related_entities === 'string' ? JSON.parse(f.related_entities) : f.related_entities) : [],
-            relatedTimelineEventIds: f.related_timeline_event_ids ? (typeof f.related_timeline_event_ids === 'string' ? JSON.parse(f.related_timeline_event_ids) : f.related_timeline_event_ids) : []
+            relatedTimelineEventIds: f.related_timeline_event_ids ? (typeof f.related_timeline_event_ids === 'string' ? JSON.parse(f.related_timeline_event_ids) : f.related_timeline_event_ids) : [],
+            isLiveAgent: Boolean(f.is_live_agent),
+            source: f.is_live_agent ? 'LIVE AGENT' : 'DEMO DATA'
           }));
         }
       }
@@ -1252,6 +1260,86 @@ export const api = {
         }
       ]
     };
+  },
+
+  // Live Windows Endpoint Agent Integration
+  async getAgentStatus(): Promise<{
+    status: string;
+    total_agents: number;
+    online_agents: number;
+    agents: Array<{
+      id: string;
+      hostname: string;
+      ip_address: string;
+      os_info: string;
+      current_user: string;
+      agent_version: string;
+      status: string;
+      is_online: boolean;
+      monitored_paths: string[];
+      total_events: number;
+      last_heartbeat: string | null;
+      seconds_since_heartbeat: number;
+    }>;
+  }> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/agent/status`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return {
+      status: 'offline',
+      total_agents: 0,
+      online_agents: 0,
+      agents: []
+    };
+  },
+
+  async getPdfDiff(evidenceId: string): Promise<{
+    evidence_id: string;
+    filename: string;
+    has_diff: boolean;
+    message?: string;
+    baseline_sha256: string;
+    current_sha256: string;
+    diff?: {
+      has_changes: boolean;
+      total_pages_baseline: number;
+      total_pages_modified: number;
+      changed_pages: number[];
+      total_additions: number;
+      total_deletions: number;
+      pages: Array<{
+        page_number: number;
+        has_changes: boolean;
+        baseline_text: string;
+        modified_text: string;
+        added_lines: string[];
+        removed_lines: string[];
+        diff_lines: Array<{
+          type: 'unchanged' | 'added' | 'removed';
+          text: string;
+        }>;
+      }>;
+      summary: string;
+    };
+  } | null> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/agent/pdf-diff/${evidenceId}`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return null;
   }
 };
 

@@ -10,6 +10,7 @@ from app.models.case import Case
 from app.models.evidence import Evidence
 from app.models.timeline import TimelineEvent
 from app.models.finding import Finding
+from app.models.agent_host import AgentHost
 from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/investigations", tags=["Forensic Investigations"])
@@ -100,16 +101,37 @@ class InvestigationResultsResponse(BaseModel):
 
 @router.get("/computers", response_model=List[ComputerInfo])
 def get_available_computers(
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Returns computers available for authorized forensic artifact collection.
     Clearly distinguishes Live Agents from Demo/Development Collectors.
     """
-    return [
+    computers: List[ComputerInfo] = []
+
+    # Include registered live endpoint agents
+    registered_hosts = db.query(AgentHost).all()
+    for h in registered_hosts:
+        computers.append(
+            ComputerInfo(
+                id=h.id,
+                name=f"{h.hostname} (Live Windows Host)",
+                os=h.os_info or "Windows 11",
+                status="Connected" if h.status == "online" else "Standby",
+                collection_mode="Read-only",
+                collection_type="Live Agent",
+                last_seen=h.last_heartbeat.strftime("%H:%M:%S UTC") if h.last_heartbeat else "Just now",
+                agent_version=h.agent_version or "v2.5.0-live",
+                is_demo=False
+            )
+        )
+
+    # Built-in investigation targets
+    computers.extend([
         ComputerInfo(
             id="EMP-LT-001",
-            name="EMP-LT-001",
+            name="EMP-LT-001 (Demo Benchmark)",
             os="Windows 11 Enterprise (Build 22631)",
             status="Connected",
             collection_mode="Read-only",
@@ -140,7 +162,8 @@ def get_available_computers(
             agent_version="v2.4.0",
             is_demo=False
         )
-    ]
+    ])
+    return computers
 
 
 @router.post("/authorize", response_model=AuthorizeResponse)

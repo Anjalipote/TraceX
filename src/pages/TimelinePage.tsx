@@ -14,16 +14,19 @@ import {
 } from 'lucide-react';
 import { EvidenceDetailModal } from '../components/evidence/EvidenceDetailModal';
 import { CorrelatedInvestigationFinding } from '../types';
+import { useApp } from '../context/AppContext';
 
 interface TimelineEventData {
   id: string;
   time: string;
   date: string;
   title: string;
-  category: 'user' | 'file' | 'usb' | 'transfer' | 'network';
+  category: 'user' | 'file' | 'usb' | 'transfer' | 'network' | 'live';
   description: string;
   path?: string;
   isSuspicious: boolean;
+  isLiveAgent?: boolean;
+  source?: string;
   metadata: {
     user: string;
     fileName?: string;
@@ -40,6 +43,7 @@ interface TimelineEventData {
 }
 
 export const TimelinePage: React.FC = () => {
+  const { timeline: appTimeline } = useApp();
   const [activeFilter, setActiveFilter] = useState<string>('ALL');
   const [selectedFinding, setSelectedFinding] = useState<CorrelatedInvestigationFinding | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -158,7 +162,40 @@ export const TimelinePage: React.FC = () => {
     }
   ];
 
-  const filteredEvents = events.filter((e) => {
+  const liveEvents: TimelineEventData[] = (appTimeline || [])
+    .filter(e => e.isLiveAgent || e.sourceArtifact === 'LIVE AGENT')
+    .map(e => {
+      const dt = new Date(e.timestamp);
+      const timeStr = !isNaN(dt.getTime()) ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Live';
+      const dateStr = !isNaN(dt.getTime()) ? dt.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today';
+      const catLower = (e.category || '').toLowerCase();
+      const cat = catLower.includes('usb') ? 'usb' : catLower.includes('file') ? 'file' : catLower.includes('user') ? 'user' : 'file';
+
+      return {
+        id: e.id,
+        time: timeStr,
+        date: dateStr,
+        title: e.title,
+        category: cat as any,
+        description: e.description,
+        path: `Endpoint Host: Real Windows Telemetry (${e.actor || 'SYSTEM'})`,
+        isSuspicious: e.isSuspicious,
+        isLiveAgent: true,
+        source: 'LIVE AGENT',
+        metadata: {
+          user: e.actor || 'LIVE_USER',
+          action: e.title,
+          process: 'TraceX Windows Agent',
+          whySuspicious: e.isSuspicious ? 'Captured by Windows live endpoint collector and deviated from baseline.' : 'Normal endpoint telemetry captured by Live Agent.',
+          relatedEvents: []
+        }
+      };
+    });
+
+  const allEvents = [...liveEvents, ...events];
+
+  const filteredEvents = allEvents.filter((e) => {
+    if (activeFilter === 'LIVE' && !e.isLiveAgent) return false;
     if (activeFilter === 'SUSPICIOUS' && !e.isSuspicious) return false;
     if (activeFilter === 'FILES' && e.category !== 'file' && e.category !== 'transfer') return false;
     if (activeFilter === 'USB' && e.category !== 'usb') return false;
@@ -200,14 +237,15 @@ export const TimelinePage: React.FC = () => {
             Investigation Timeline
           </h1>
           <p className="text-xs text-[#64748B] mt-0.5">
-            Chronological view of all relevant events.
+            Chronological view of all relevant events across live endpoints and investigation benchmarks.
           </p>
         </div>
 
         {/* Filter Pills */}
-        <div className="flex items-center gap-1.5 p-1 bg-white rounded-xl border border-[#E2E8F0] shadow-xs">
+        <div className="flex items-center gap-1.5 p-1 bg-white rounded-xl border border-[#E2E8F0] shadow-xs flex-wrap">
           {[
             { id: 'ALL', label: 'All' },
+            { id: 'LIVE', label: '🟢 Live Agent' },
             { id: 'FILES', label: 'File Activity' },
             { id: 'USB', label: 'USB Devices' },
             { id: 'USER', label: 'User' },
@@ -286,7 +324,17 @@ export const TimelinePage: React.FC = () => {
             </div>
 
             {/* Right: Badge & Chevron */}
-            <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
+            <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+              {evt.isLiveAgent ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  LIVE AGENT
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                  DEMO DATA
+                </span>
+              )}
               {evt.isSuspicious && (
                 <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
                   Suspicious

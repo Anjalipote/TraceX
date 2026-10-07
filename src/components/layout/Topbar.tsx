@@ -13,6 +13,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { GlobalSearchItem } from '../../types';
+import { api } from '../../services/api';
 
 export const Topbar: React.FC = () => {
   const navigate = useNavigate();
@@ -33,7 +34,23 @@ export const Topbar: React.FC = () => {
   const [searchResults, setSearchResults] = useState<GlobalSearchItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [agentStatus, setAgentStatus] = useState<any>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Poll live agent host status
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const s = await api.getAgentStatus();
+        setAgentStatus(s);
+      } catch {
+        // fallback
+      }
+    };
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 8000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Live Forensic Search with Debounce
   useEffect(() => {
@@ -201,6 +218,28 @@ export const Topbar: React.FC = () => {
                 </div>
               </div>
             </>
+          )}
+        </div>
+
+        {/* Center: Live Endpoint Collector Status Badge */}
+        <div className="hidden md:flex items-center">
+          {agentStatus?.online_agents > 0 ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-mono shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="font-bold text-emerald-800">LIVE AGENT:</span>
+              <span className="text-emerald-700">
+                {agentStatus.agents?.find((a: any) => a.is_online)?.hostname || 'Active Endpoint'}
+              </span>
+              <span className="text-[10px] bg-emerald-200/70 text-emerald-900 px-1.5 py-0.5 rounded font-bold">
+                {agentStatus.agents?.reduce((acc: number, a: any) => acc + (a.total_events || 0), 0)} events
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
+              <span className="w-2 h-2 rounded-full bg-slate-400" />
+              <span className="font-semibold">MODE:</span>
+              <span>DEMO BENCHMARK</span>
+            </div>
           )}
         </div>
 

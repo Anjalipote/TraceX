@@ -38,6 +38,10 @@ export interface EvidenceItem {
   relatedFindings: string[];
   relatedGraphNodes: string[];
   description: string;
+  isLiveAgent?: boolean;
+  baselineSha256?: string;
+  pdfDiffData?: any;
+  source?: string;
 }
 
 export interface TimelineEventItem {
@@ -55,6 +59,8 @@ export interface TimelineEventItem {
   relatedFindings?: string[];
   rawLogSnippet?: string;
   mitreTechnique?: string;
+  isLiveAgent?: boolean;
+  source?: string;
 }
 
 export interface FindingItem {
@@ -63,6 +69,8 @@ export interface FindingItem {
   severity: Severity;
   timestamp: string;
   relatedFile: string;
+  isLiveAgent?: boolean;
+  source?: string;
   evidenceId: string;
   riskContribution: number;
   summary: string;

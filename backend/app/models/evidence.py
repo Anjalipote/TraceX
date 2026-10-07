@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import uuid
-from sqlalchemy import Column, String, BigInteger, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, BigInteger, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -23,6 +23,9 @@ class Evidence(Base):
     source_device = Column(String(255), default="FINANCE-SRV-04")
     category = Column(String(64), default="FileSystem")
     notes = Column(Text, nullable=True)
+    is_live_agent = Column(Boolean, default=False, nullable=True)
+    baseline_sha256 = Column(String(64), nullable=True)
+    pdf_diff_data = Column(Text, nullable=True)  # JSON-encoded page-by-page PDF differences
     
     # Forensic Timestamps (extracted from file or header)
     file_created_at = Column(DateTime, nullable=True)

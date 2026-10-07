@@ -17,6 +17,28 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+def ensure_schema_columns():
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            for table, col, col_def in [
+                ("evidence", "is_live_agent", "BOOLEAN DEFAULT 0"),
+                ("evidence", "baseline_sha256", "VARCHAR(64)"),
+                ("evidence", "pdf_diff_data", "TEXT"),
+                ("timeline_events", "is_live_agent", "BOOLEAN DEFAULT 0"),
+                ("findings", "is_live_agent", "BOOLEAN DEFAULT 0"),
+            ]:
+                try:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
+                    conn.commit()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+# Run schema check once on import
+ensure_schema_columns()
+
 def get_db():
     db = SessionLocal()
     try:

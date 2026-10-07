@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import uuid
-from sqlalchemy import Column, String, Text, Integer, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, Integer, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -18,6 +18,7 @@ class Finding(Base):
     mitre_technique = Column(String(128), nullable=True)
     category = Column(String(64), default="Exfiltration")
     status = Column(String(32), default="Confirmed", nullable=False)  # Confirmed, Under Review, Dismissed
+    is_live_agent = Column(Boolean, default=False, nullable=True)
     
     # Phase 3 Explainability & Confidence Extensions
     confidence = Column(String(32), default="High", nullable=False)  # High, Medium, Low

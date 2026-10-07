@@ -48,6 +48,17 @@ export const FindingCard: React.FC<FindingCardProps> = ({ finding }) => {
             <span>Confidence: {confidence}</span>
           </span>
 
+          {finding.isLiveAgent ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg border text-xs font-mono font-bold bg-emerald-950/60 text-emerald-400 border-emerald-700/60 shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              LIVE AGENT
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg border text-xs font-mono text-slate-400 bg-slate-900 border-slate-700">
+              DEMO BENCHMARK
+            </span>
+          )}
+
           {/* Explainability [Why?] Button (Final Forensic Enhancement) */}
           <button
             onClick={() => setShowProvenanceModal(true)}

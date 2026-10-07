@@ -20,6 +20,7 @@ import { SeverityBadge } from '../common/SeverityBadge';
 import { EvidenceItem } from '../../types';
 import { truncateHash, copyToClipboard } from '../../utils/formatters';
 import { useApp } from '../../context/AppContext';
+import { PdfDiffModal } from './PdfDiffModal';
 
 interface EvidenceDrawerProps {
   evidence: EvidenceItem | null;
@@ -35,6 +36,7 @@ export const EvidenceDrawer: React.FC<EvidenceDrawerProps> = ({
   const navigate = useNavigate();
   const { showToast } = useApp();
   const [copiedHash, setCopiedHash] = React.useState(false);
+  const [showDiffModal, setShowDiffModal] = React.useState(false);
 
   if (!evidence) return null;
 
@@ -57,16 +59,48 @@ export const EvidenceDrawer: React.FC<EvidenceDrawerProps> = ({
       width="lg"
     >
       <div className="space-y-6">
-        {/* Read-Only Forensic Storage Assurance (Final Forensic Enhancement) */}
+        {/* Read-Only Forensic Storage Assurance & Origin Indicator */}
         <div className="p-3.5 rounded-xl bg-blue-950/25 border border-blue-800/40 flex items-center justify-between text-xs font-mono">
           <div className="flex items-center gap-2 text-blue-300">
             <Lock className="w-4 h-4 text-blue-400 shrink-0" />
             <span>Storage Mode: <strong className="text-white">READ-ONLY (Write-Protected)</strong></span>
           </div>
-          <span className="text-[10px] bg-blue-900/40 text-blue-300 px-2 py-0.5 rounded border border-blue-700/50 font-bold">
-            INERT ARTIFACT
-          </span>
+          {evidence.isLiveAgent ? (
+            <span className="text-[10px] bg-emerald-950/60 text-emerald-400 px-2 py-0.5 rounded border border-emerald-700/60 font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              LIVE AGENT TELEMETRY
+            </span>
+          ) : (
+            <span className="text-[10px] bg-slate-900 text-slate-400 px-2 py-0.5 rounded border border-slate-700 font-bold">
+              DEMO BENCHMARK DATA
+            </span>
+          )}
         </div>
+
+        {/* PDF Diff Inspector Card if baseline diff data available */}
+        {evidence.pdfDiffData && (
+          <div className="p-4 rounded-xl bg-red-950/30 border border-red-700/70 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono font-bold text-red-300 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+                POST-BASELINE PDF ALTERATION DETECTED
+              </span>
+              <span className="text-[10px] font-mono text-red-400 bg-red-900/40 px-2 py-0.5 rounded border border-red-700">
+                {evidence.pdfDiffData.changed_pages?.length || 1} Page(s) Altered
+              </span>
+            </div>
+            <p className="text-xs text-[#CBD5E1] leading-relaxed">
+              {evidence.pdfDiffData.summary || 'Textual differences detected between initial baseline and current endpoint artifact.'}
+            </p>
+            <button
+              onClick={() => setShowDiffModal(true)}
+              className="w-full mt-2 py-2 px-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-mono text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Inspect Page-by-Page Text Diff</span>
+            </button>
+          </div>
+        )}
 
         {/* Magic Byte Mismatch Warning (Final Forensic Enhancement) */}
         {(evidence.description?.toLowerCase().includes('mismatch') || (evidence.category === 'Executable' && (evidence.filename.endsWith('.pdf') || evidence.filename.endsWith('.jpg') || evidence.filename.endsWith('.docx')))) && (
@@ -253,6 +287,18 @@ export const EvidenceDrawer: React.FC<EvidenceDrawerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Forensic PDF Diff Modal */}
+      {showDiffModal && (
+        <PdfDiffModal
+          isOpen={showDiffModal}
+          onClose={() => setShowDiffModal(false)}
+          filename={evidence.filename}
+          baselineSha256={evidence.baselineSha256 || evidence.originalSha256}
+          currentSha256={evidence.sha256}
+          diffData={evidence.pdfDiffData}
+        />
+      )}
     </DetailDrawer>
   );
 };

@@ -13,6 +13,7 @@ from app.models.anomaly import Anomaly
 from app.models.audit_log import AuditLog
 from app.models.evidence_gap import EvidenceGap
 from app.models.custody_entry import CustodyEntry
+from app.models.agent_host import AgentHost
 
 __all__ = [
     "Base",
@@ -30,5 +31,6 @@ __all__ = [
     "AuditLog",
     "EvidenceGap",
     "CustodyEntry",
+    "AgentHost",
 ]
 

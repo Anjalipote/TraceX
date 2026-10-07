@@ -14,12 +14,14 @@ import {
   Layers,
   ChevronRight,
   ExternalLink,
-  X
+  X,
+  FileText
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { truncateHash, copyToClipboard } from '../../utils/formatters';
 import { api } from '../../services/api';
 import { Modal } from '../common/Modal';
+import { PdfDiffModal } from '../evidence/PdfDiffModal';
 
 export const HashVerification: React.FC = () => {
   const { 
@@ -35,6 +37,7 @@ export const HashVerification: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showMerkleModal, setShowMerkleModal] = useState(false);
   const [showCustodyModal, setShowCustodyModal] = useState(false);
+  const [diffModalItem, setDiffModalItem] = useState<any>(null);
   const [custodyChain, setCustodyChain] = useState<any[]>([]);
 
   useEffect(() => {
@@ -318,7 +321,8 @@ export const HashVerification: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-[#1E293B]/50">
               {filteredEvidence.map((item) => {
-                const isItemTampered = item.sha256 !== item.originalSha256;
+                const origHash = item.baselineSha256 || item.originalSha256;
+                const isItemTampered = item.sha256 !== origHash;
 
                 return (
                   <tr
@@ -330,9 +334,31 @@ export const HashVerification: React.FC = () => {
                     {/* Filename */}
                     <td className="py-4 px-5">
                       <div>
-                        <span className="font-bold text-[#F8FAFC] text-xs">
-                          {item.filename}
-                        </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-[#F8FAFC] text-xs">
+                            {item.filename}
+                          </span>
+                          {item.isLiveAgent ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-700/60">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              LIVE AGENT
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono text-slate-400 bg-slate-900 border border-slate-700">
+                              DEMO BENCHMARK
+                            </span>
+                          )}
+                          {item.pdfDiffData && (
+                            <button
+                              onClick={() => setDiffModalItem(item)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-950/70 hover:bg-red-900 text-red-300 border border-red-700 text-[10px] font-mono font-bold transition-colors cursor-pointer"
+                              title="Compare PDF baseline vs modified"
+                            >
+                              <FileText className="w-3 h-3 text-red-400" />
+                              <span>Diff PDF</span>
+                            </button>
+                          )}
+                        </div>
                         <span className="text-[10px] text-[#64748B] block truncate max-w-xs mt-0.5">
                           {item.sourceLocation}
                         </span>
@@ -342,13 +368,13 @@ export const HashVerification: React.FC = () => {
                     {/* Original Hash */}
                     <td className="py-4 px-5 font-mono text-[11px] text-[#94A3B8]">
                       <div className="flex items-center gap-2">
-                        <span className="truncate max-w-[220px]" title={item.originalSha256}>
-                          {truncateHash(item.originalSha256, 10, 8)}
+                        <span className="truncate max-w-[220px]" title={origHash}>
+                          {truncateHash(origHash, 10, 8)}
                         </span>
                         <button
-                          onClick={() => handleCopy(item.originalSha256, `orig-${item.id}`)}
+                          onClick={() => handleCopy(origHash, `orig-${item.id}`)}
                           className="p-1 rounded hover:bg-[#111923] text-[#64748B] hover:text-white"
-                          title="Copy original hash"
+                          title="Copy baseline/original hash"
                         >
                           {copiedKey === `orig-${item.id}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                         </button>
@@ -486,6 +512,18 @@ export const HashVerification: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Forensic PDF Diff Modal */}
+      {diffModalItem && (
+        <PdfDiffModal
+          isOpen={!!diffModalItem}
+          onClose={() => setDiffModalItem(null)}
+          filename={diffModalItem.filename}
+          baselineSha256={diffModalItem.baselineSha256 || diffModalItem.originalSha256}
+          currentSha256={diffModalItem.sha256}
+          diffData={diffModalItem.pdfDiffData}
+        />
+      )}
     </div>
   );
 };

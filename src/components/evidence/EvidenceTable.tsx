@@ -17,6 +17,7 @@ import { EvidenceItem } from '../../types';
 import { SeverityBadge } from '../common/SeverityBadge';
 import { truncateHash, copyToClipboard } from '../../utils/formatters';
 import { useApp } from '../../context/AppContext';
+import { PdfDiffModal } from './PdfDiffModal';
 
 interface EvidenceTableProps {
   onSelectEvidence: (evidence: EvidenceItem) => void;
@@ -32,6 +33,8 @@ export const EvidenceTable: React.FC<EvidenceTableProps> = ({
   const [localSearch, setLocalSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [severityFilter, setSeverityFilter] = useState<string>('ALL');
+  const [sourceFilter, setSourceFilter] = useState<'ALL' | 'LIVE' | 'DEMO'>('ALL');
+  const [diffModalItem, setDiffModalItem] = useState<EvidenceItem | null>(null);
   const [sortField, setSortField] = useState<keyof EvidenceItem>('riskScore');
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -60,8 +63,12 @@ export const EvidenceTable: React.FC<EvidenceTableProps> = ({
 
       const matchesType = typeFilter === 'ALL' || item.category === typeFilter;
       const matchesSeverity = severityFilter === 'ALL' || item.severity === severityFilter;
+      const matchesSource = 
+        sourceFilter === 'ALL' || 
+        (sourceFilter === 'LIVE' && item.isLiveAgent) || 
+        (sourceFilter === 'DEMO' && !item.isLiveAgent);
 
-      return matchesSearch && matchesType && matchesSeverity;
+      return matchesSearch && matchesType && matchesSeverity && matchesSource;
     }).sort((a, b) => {
       const aVal = a[sortField];
       const bVal = b[sortField];
@@ -144,6 +151,19 @@ export const EvidenceTable: React.FC<EvidenceTableProps> = ({
               <option value="HIGH">High</option>
               <option value="MEDIUM">Medium</option>
               <option value="LOW">Low</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-[#94A3B8] font-mono">
+            <span>Source:</span>
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value as any)}
+              className="px-3 py-2 rounded-xl bg-[#080D15] border border-[#1E293B] text-xs text-[#F8FAFC] focus:outline-none focus:border-blue-500 font-mono"
+            >
+              <option value="ALL">All Sources</option>
+              <option value="LIVE">🟢 Live Agent Only</option>
+              <option value="DEMO">🔵 Demo Benchmark Only</option>
             </select>
           </div>
 
@@ -248,9 +268,34 @@ export const EvidenceTable: React.FC<EvidenceTableProps> = ({
                           {getFileIcon(item.category)}
                         </div>
                         <div>
-                          <p className="font-semibold text-[#F8FAFC] group-hover:text-blue-400 font-mono text-xs transition-colors">
-                            {item.filename}
-                          </p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-[#F8FAFC] group-hover:text-blue-400 font-mono text-xs transition-colors">
+                              {item.filename}
+                            </p>
+                            {item.isLiveAgent ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-700/60">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                LIVE AGENT
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono text-slate-400 bg-slate-900 border border-slate-700">
+                                DEMO DATA
+                              </span>
+                            )}
+                            {item.pdfDiffData && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDiffModalItem(item);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-950/70 hover:bg-red-900 text-red-300 border border-red-700 text-[10px] font-mono font-bold transition-colors cursor-pointer"
+                                title="View PDF text alterations page-by-page"
+                              >
+                                <FileText className="w-3 h-3 text-red-400" />
+                                <span>Diff PDF ({item.pdfDiffData.changed_pages?.length || 1}p)</span>
+                              </button>
+                            )}
+                          </div>
                           <p className="text-[10px] text-[#64748B] truncate max-w-xs font-mono mt-0.5">
                             {item.sourceLocation}
                           </p>
@@ -328,6 +373,18 @@ export const EvidenceTable: React.FC<EvidenceTableProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Interactive PDF Diff Modal */}
+      {diffModalItem && (
+        <PdfDiffModal
+          isOpen={!!diffModalItem}
+          onClose={() => setDiffModalItem(null)}
+          filename={diffModalItem.filename}
+          baselineSha256={diffModalItem.baselineSha256 || diffModalItem.originalSha256}
+          currentSha256={diffModalItem.sha256}
+          diffData={diffModalItem.pdfDiffData}
+        />
+      )}
     </div>
   );
 };
