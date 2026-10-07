@@ -251,8 +251,23 @@ export const EvidenceTable: React.FC<EvidenceTableProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1E293B]/50">
-              {filteredEvidence.map((item) => {
-                const isSelected = selectedEvidenceId === item.id;
+              {filteredEvidence.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-12 px-6 text-center">
+                    <div className="flex flex-col items-center justify-center space-y-2">
+                      <HardDrive className="w-8 h-8 text-[#64748B]" />
+                      <p className="text-sm font-semibold font-mono text-[#F8FAFC]">
+                        No evidence collected.
+                      </p>
+                      <p className="text-xs text-[#94A3B8] max-w-sm">
+                        No forensic artifacts have been acquired for this investigation yet. Run a forensic scan or start endpoint monitoring to populate evidence.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredEvidence.map((item) => {
+                  const isSelected = selectedEvidenceId === item.id;
 
                 return (
                   <tr
@@ -377,7 +392,7 @@ export const EvidenceTable: React.FC<EvidenceTableProps> = ({
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

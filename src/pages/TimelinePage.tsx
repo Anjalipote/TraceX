@@ -44,7 +44,7 @@ interface TimelineEventData {
 }
 
 export const TimelinePage: React.FC = () => {
-  const { timeline: appTimeline } = useApp();
+  const { timeline: appTimeline, investigationMode } = useApp();
   const [activeFilter, setActiveFilter] = useState<string>('ALL');
   const [selectedFinding, setSelectedFinding] = useState<CorrelatedInvestigationFinding | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -254,8 +254,11 @@ export const TimelinePage: React.FC = () => {
   // Combine database events, live app events, and baseline events (avoiding ID duplicates)
   const seenIds = new Set<string>();
   const allEvents: TimelineEventData[] = [];
+  const sourceEvents = investigationMode === 'real' 
+    ? [...parsedDbEvents, ...liveEvents]
+    : [...parsedDbEvents, ...liveEvents, ...events];
 
-  for (const ev of [...parsedDbEvents, ...liveEvents, ...events]) {
+  for (const ev of sourceEvents) {
     if (!seenIds.has(ev.id)) {
       seenIds.add(ev.id);
       allEvents.push(ev);
@@ -340,7 +343,15 @@ export const TimelinePage: React.FC = () => {
 
       {/* Chronological Event Cards List */}
       <div className="space-y-3 relative">
-        {filteredEvents.length === 0 ? (
+        {allEvents.length === 0 ? (
+          <div className="p-12 text-center bg-white rounded-2xl border border-[#E2E8F0] shadow-xs space-y-2">
+            <Clock className="w-8 h-8 text-[#94A3B8] mx-auto opacity-60" />
+            <h3 className="text-sm font-bold text-[#1E293B]">No forensic events collected.</h3>
+            <p className="text-xs text-[#64748B] max-w-md mx-auto">
+              No timeline artifacts have been acquired for this investigation yet. Run a historical scan or start live monitoring to capture events.
+            </p>
+          </div>
+        ) : filteredEvents.length === 0 ? (
           <div className="p-12 text-center bg-white rounded-2xl border border-[#E2E8F0] shadow-xs space-y-2">
             <Clock className="w-8 h-8 text-[#94A3B8] mx-auto opacity-60" />
             <h3 className="text-sm font-bold text-[#1E293B]">Historical record unavailable for current filter</h3>

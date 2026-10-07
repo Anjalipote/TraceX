@@ -18,7 +18,8 @@ import { GraphNodeData } from '../../types';
 import { 
   RotateCcw, 
   Layers,
-  HelpCircle
+  HelpCircle,
+  GitFork
 } from 'lucide-react';
 
 import { api } from '../../services/api';
@@ -30,9 +31,13 @@ const nodeTypes = {
 };
 
 export const EvidenceGraph: React.FC = () => {
-  const { currentCase } = useApp();
-  const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_GRAPH_NODES);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(INITIAL_GRAPH_EDGES);
+  const { currentCase, investigationMode } = useApp();
+  const [nodes, setNodes, onNodesChange] = useNodesState(
+    investigationMode === 'real' ? [] : INITIAL_GRAPH_NODES
+  );
+  const [edges, setEdges, onEdgesChange] = useEdgesState(
+    investigationMode === 'real' ? [] : INITIAL_GRAPH_EDGES
+  );
 
   const [selectedNodeData, setSelectedNodeData] = useState<GraphNodeData | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -43,15 +48,26 @@ export const EvidenceGraph: React.FC = () => {
   React.useEffect(() => {
     let isMounted = true;
     api.getGraph(currentCase.id).then((graph) => {
-      if (isMounted && graph && graph.nodes && graph.nodes.length > 0) {
-        setNodes(graph.nodes);
-        setEdges(graph.edges);
+      if (isMounted) {
+        if (graph && graph.nodes && graph.nodes.length > 0) {
+          setNodes(graph.nodes);
+          setEdges(graph.edges);
+        } else if (investigationMode === 'real') {
+          setNodes([]);
+          setEdges([]);
+        } else {
+          setNodes(INITIAL_GRAPH_NODES);
+          setEdges(INITIAL_GRAPH_EDGES);
+        }
       }
     }).catch(() => {
-      // Retains demo fallback
+      if (investigationMode === 'real') {
+        setNodes([]);
+        setEdges([]);
+      }
     });
     return () => { isMounted = false; };
-  }, [currentCase.id, setNodes, setEdges]);
+  }, [currentCase.id, investigationMode, setNodes, setEdges]);
 
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     const data = node.data as unknown as GraphNodeData;
@@ -158,99 +174,113 @@ export const EvidenceGraph: React.FC = () => {
       </div>
 
       {/* Main Flow Canvas */}
-      <div className="relative h-[720px] w-full rounded-2xl bg-[#070A0F] border border-[#1E293B]/80 overflow-hidden shadow-2xl">
-        <ReactFlow
-          nodes={filteredNodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeClick={onNodeClick}
-          onEdgeClick={onEdgeClick}
-          fitView
-          fitViewOptions={{ padding: 0.25 }}
-          minZoom={0.4}
-          maxZoom={1.8}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background 
-            variant={BackgroundVariant.Dots} 
-            gap={28} 
-            size={1.5} 
-            color="#1E293B" 
-          />
-          <Controls 
-            showInteractive={false} 
-            className="!bg-[#0B1017] !border !border-[#1E293B] !rounded-xl !p-1.5" 
-          />
-          <MiniMap 
-            nodeColor={(node) => {
-              const data = node.data as unknown as GraphNodeData;
-              if (data?.risk === 'CRITICAL') return '#EF4444';
-              if (data?.risk === 'HIGH') return '#F59E0B';
-              return '#3B82F6';
-            }}
-            maskColor="rgba(7, 10, 15, 0.8)"
-            className="!bg-[#0B1017] !border !border-[#1E293B] !rounded-xl"
-          />
-        </ReactFlow>
+      {filteredNodes.length === 0 ? (
+        <div className="h-[520px] w-full rounded-2xl bg-[#080D15] border border-[#1E293B] flex flex-col items-center justify-center p-8 text-center space-y-3">
+          <div className="w-12 h-12 rounded-xl bg-slate-800/60 border border-slate-700/60 text-slate-400 flex items-center justify-center">
+            <GitFork className="w-6 h-6" />
+          </div>
+          <h3 className="text-sm font-bold font-mono text-[#F8FAFC]">
+            No connections.
+          </h3>
+          <p className="text-xs text-[#94A3B8] max-w-md font-mono">
+            No forensic correlation links or evidence relationships discovered for this investigation.
+          </p>
+        </div>
+      ) : (
+        <div className="relative h-[720px] w-full rounded-2xl bg-[#070A0F] border border-[#1E293B]/80 overflow-hidden shadow-2xl">
+          <ReactFlow
+            nodes={filteredNodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
+            fitView
+            fitViewOptions={{ padding: 0.25 }}
+            minZoom={0.4}
+            maxZoom={1.8}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background 
+              variant={BackgroundVariant.Dots} 
+              gap={28} 
+              size={1.5} 
+              color="#1E293B" 
+            />
+            <Controls 
+              showInteractive={false} 
+              className="!bg-[#0B1017] !border !border-[#1E293B] !rounded-xl !p-1.5" 
+            />
+            <MiniMap 
+              nodeColor={(node) => {
+                const data = node.data as unknown as GraphNodeData;
+                if (data?.risk === 'CRITICAL') return '#EF4444';
+                if (data?.risk === 'HIGH') return '#F59E0B';
+                return '#3B82F6';
+              }}
+              maskColor="rgba(7, 10, 15, 0.8)"
+              className="!bg-[#0B1017] !border !border-[#1E293B] !rounded-xl"
+            />
+          </ReactFlow>
 
-        {/* Selected Edge Relationship Callout */}
-        {selectedEdgeData && (
-          <div className="absolute top-5 right-5 max-w-sm p-4 rounded-2xl bg-[#0B1017]/95 backdrop-blur-md border border-blue-500/50 text-xs font-mono shadow-2xl space-y-2 animate-in fade-in-50 z-20">
-            <div className="flex items-center justify-between pb-2 border-b border-[#1E293B]">
-              <span className="text-[10px] uppercase font-bold text-blue-400 flex items-center gap-1.5">
-                <Layers className="w-3 h-3 text-blue-400" />
-                CORRELATED RELATIONSHIP
-              </span>
-              <button 
-                onClick={() => setSelectedEdgeData(null)} 
-                className="text-[#64748B] hover:text-white px-1 py-0.5 rounded hover:bg-[#1E293B]"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-bold text-[#F8FAFC] tracking-wide text-xs">
-                {selectedEdgeData.label || selectedEdgeData.relationship_type || 'CONNECTED'}
-              </span>
-              {selectedEdgeData.confidence && (
-                <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded font-bold">
-                  {Math.round(selectedEdgeData.confidence * 100)}% Confidence
+          {/* Selected Edge Relationship Callout */}
+          {selectedEdgeData && (
+            <div className="absolute top-5 right-5 max-w-sm p-4 rounded-2xl bg-[#0B1017]/95 backdrop-blur-md border border-blue-500/50 text-xs font-mono shadow-2xl space-y-2 animate-in fade-in-50 z-20">
+              <div className="flex items-center justify-between pb-2 border-b border-[#1E293B]">
+                <span className="text-[10px] uppercase font-bold text-blue-400 flex items-center gap-1.5">
+                  <Layers className="w-3 h-3 text-blue-400" />
+                  CORRELATED RELATIONSHIP
                 </span>
-              )}
+                <button 
+                  onClick={() => setSelectedEdgeData(null)} 
+                  className="text-[#64748B] hover:text-white px-1 py-0.5 rounded hover:bg-[#1E293B]"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-[#F8FAFC] tracking-wide text-xs">
+                  {selectedEdgeData.label || selectedEdgeData.relationship_type || 'CONNECTED'}
+                </span>
+                {selectedEdgeData.confidence && (
+                  <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded font-bold">
+                    {Math.round(selectedEdgeData.confidence * 100)}% Confidence
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-[#94A3B8] leading-relaxed">
+                {selectedEdgeData.explanation || `Forensic connection established between ${selectedEdgeData.source} and ${selectedEdgeData.target}.`}
+              </p>
             </div>
-            <p className="text-[11px] text-[#94A3B8] leading-relaxed">
-              {selectedEdgeData.explanation || `Forensic connection established between ${selectedEdgeData.source} and ${selectedEdgeData.target}.`}
-            </p>
-          </div>
-        )}
+          )}
 
-        {/* Legend Overlay */}
-        <div className="absolute top-5 left-5 p-3.5 rounded-2xl bg-[#0B1017]/90 backdrop-blur-md border border-[#1E293B] text-xs font-mono pointer-events-none space-y-2 shadow-xl">
-          <div className="text-[10px] uppercase font-bold text-[#64748B]">Entity Severity Key</div>
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5 text-red-400">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
-              Critical
-            </span>
-            <span className="flex items-center gap-1.5 text-amber-400">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-              High
-            </span>
-            <span className="flex items-center gap-1.5 text-blue-400">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-              Medium
-            </span>
+          {/* Legend Overlay */}
+          <div className="absolute top-5 left-5 p-3.5 rounded-2xl bg-[#0B1017]/90 backdrop-blur-md border border-[#1E293B] text-xs font-mono pointer-events-none space-y-2 shadow-xl">
+            <div className="text-[10px] uppercase font-bold text-[#64748B]">Entity Severity Key</div>
+            <div className="flex items-center gap-4">
+              <span className="flex items-center gap-1.5 text-red-400">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                Critical
+              </span>
+              <span className="flex items-center gap-1.5 text-amber-400">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                High
+              </span>
+              <span className="flex items-center gap-1.5 text-blue-400">
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+                Medium
+              </span>
+            </div>
+          </div>
+
+          {/* Interaction Hint */}
+          <div className="absolute bottom-5 left-5 p-3 rounded-xl bg-[#0B1017]/85 backdrop-blur-sm border border-[#1E293B] text-[11px] font-mono text-[#94A3B8] pointer-events-none flex items-center gap-2">
+            <HelpCircle className="w-3.5 h-3.5 text-blue-400" />
+            <span>Click any node or connecting edge to inspect forensic attributes & explanations.</span>
           </div>
         </div>
-
-        {/* Interaction Hint */}
-        <div className="absolute bottom-5 left-5 p-3 rounded-xl bg-[#0B1017]/85 backdrop-blur-sm border border-[#1E293B] text-[11px] font-mono text-[#94A3B8] pointer-events-none flex items-center gap-2">
-          <HelpCircle className="w-3.5 h-3.5 text-blue-400" />
-          <span>Click any node or connecting edge to inspect forensic attributes & explanations.</span>
-        </div>
-      </div>
+      )}
 
       <NodeDetailDrawer
         nodeData={selectedNodeData}

@@ -25,6 +25,7 @@ backend/uploads/
 uploads/
 !backend/uploads/.gitkeep
 agent/.tracex_baseline/
+agent/agent_test_evidence/
 
 # Node / Vite Frontend
 node_modules/

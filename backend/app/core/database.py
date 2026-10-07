@@ -20,6 +20,7 @@ Base = declarative_base()
 def ensure_schema_columns():
     try:
         from sqlalchemy import text
+        Base.metadata.create_all(bind=engine)
         with engine.connect() as conn:
             for table, col, col_def in [
                 ("evidence", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
@@ -28,6 +29,11 @@ def ensure_schema_columns():
                 ("timeline_events", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
                 ("findings", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
                 ("forensic_events", "hardware_id", "VARCHAR(255)"),
+                ("cases", "is_real_investigation", "BOOLEAN DEFAULT FALSE"),
+                ("cases", "collection_type", "VARCHAR(32) DEFAULT 'demo'"),
+                ("cases", "computer_id", "VARCHAR(128)"),
+                ("cases", "target_file_path", "VARCHAR(512)"),
+                ("cases", "authorization_status", "VARCHAR(32) DEFAULT 'Pending'"),
             ]:
                 try:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))

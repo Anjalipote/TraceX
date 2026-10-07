@@ -16,6 +16,15 @@ from app.models.custody_entry import CustodyEntry
 from app.models.agent_host import AgentHost
 from app.models.collection_job import CollectionJob
 from app.models.forensic_event import ForensicEvent
+from app.models.investigation_file import InvestigationFile
+from app.models.file_artifact import (
+    FileMetadata,
+    FileHash,
+    FileVersion,
+    WindowsEventRecord,
+    UsnEventRecord,
+    DeviceEventRecord,
+)
 
 __all__ = [
     "Base",
@@ -36,5 +45,12 @@ __all__ = [
     "AgentHost",
     "CollectionJob",
     "ForensicEvent",
+    "InvestigationFile",
+    "FileMetadata",
+    "FileHash",
+    "FileVersion",
+    "WindowsEventRecord",
+    "UsnEventRecord",
+    "DeviceEventRecord",
 ]
 

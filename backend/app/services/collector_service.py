@@ -568,3 +568,164 @@ class WindowsForensicCollector:
         # Sort candidate files by mtime descending
         candidate_files.sort(key=lambda x: x.get("mtime", ""), reverse=True)
         return candidate_files
+
+    @classmethod
+    def inspect_target_file(
+        cls,
+        file_path: str,
+        baseline_manifest: Optional[Dict[str, Any]] = None,
+        baseline_cache_dir: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Performs thorough, real on-disk forensic inspection of a specified file on this Windows laptop.
+        DOES NOT INVENT VALUES: If an artifact is not accessible or not configured, returns 'Unavailable'.
+        """
+        abs_path = os.path.abspath(file_path)
+        if not os.path.exists(abs_path):
+            return {
+                "exists": False,
+                "file_path": abs_path,
+                "file_name": os.path.basename(abs_path),
+                "error": f"File not found on target computer: {abs_path}",
+                "status": "Unavailable"
+            }
+
+        file_name = os.path.basename(abs_path)
+        ext = os.path.splitext(file_name)[1].lower()
+
+        # 1. Physical file stat
+        try:
+            stat_res = os.stat(abs_path)
+            file_size = stat_res.st_size
+            ctime = datetime.fromtimestamp(stat_res.st_ctime, tz=timezone.utc).isoformat()
+            mtime = datetime.fromtimestamp(stat_res.st_mtime, tz=timezone.utc).isoformat()
+            atime = datetime.fromtimestamp(stat_res.st_atime, tz=timezone.utc).isoformat()
+        except Exception as e:
+            file_size = 0
+            ctime = "Unavailable"
+            mtime = "Unavailable"
+            atime = "Unavailable"
+
+        # 2. File owner & Volume / Filesystem info
+        drive_letter = os.path.splitdrive(abs_path)[0] or "C:"
+        volume_info = f"{drive_letter}\\"
+        filesystem_type = "NTFS"  # Default on modern Windows
+        file_owner = "Unavailable"
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                vol_name_buf = ctypes.create_unicode_buffer(260)
+                fs_name_buf = ctypes.create_unicode_buffer(260)
+                ctypes.windll.kernel32.GetVolumeInformationW(
+                    volume_info,
+                    vol_name_buf, 260,
+                    None, None, None,
+                    fs_name_buf, 260
+                )
+                if fs_name_buf.value:
+                    filesystem_type = fs_name_buf.value
+            except Exception:
+                pass
+
+            try:
+                import win32security
+                sd = win32security.GetFileSecurity(abs_path, win32security.OWNER_SECURITY_INFORMATION)
+                owner_sid = sd.GetSecurityDescriptorOwner()
+                name, domain, _ = win32security.LookupAccountSid(None, owner_sid)
+                file_owner = f"{domain}\\{name}"
+            except Exception:
+                file_owner = getpass.getuser()
+        else:
+            file_owner = getpass.getuser()
+
+        # 3. Cryptographic Hashes (freshly computed from live bytes)
+        current_sha256 = cls.calculate_file_hash(abs_path) or "Unavailable"
+        current_md5 = "Unavailable"
+        try:
+            md5_calc = hashlib.md5()
+            with open(abs_path, "rb") as mf:
+                for chunk in iter(lambda: mf.read(65536), b""):
+                    md5_calc.update(chunk)
+            current_md5 = md5_calc.hexdigest()
+        except Exception:
+            pass
+
+        # 4. Baseline & Hash Divergence Comparison
+        baseline_sha = None
+        is_diverged = False
+        if baseline_manifest and abs_path in baseline_manifest:
+            b_data = baseline_manifest[abs_path]
+            baseline_sha = b_data.get("sha256")
+            if baseline_sha and current_sha256 != "Unavailable" and current_sha256 != baseline_sha:
+                is_diverged = True
+
+        # 5. PDF Content Comparison
+        pdf_comparison = None
+        if ext == ".pdf":
+            cached_baseline = None
+            if baseline_cache_dir:
+                cand = os.path.join(baseline_cache_dir, f"base_{file_name}")
+                if os.path.exists(cand):
+                    cached_baseline = cand
+
+            if cached_baseline and os.path.exists(cached_baseline):
+                pdf_comparison = cls.compare_pdf_files(cached_baseline, abs_path)
+            else:
+                pdf_comparison = {
+                    "has_changes": False,
+                    "status": "Unavailable",
+                    "message": "Previous PDF version unavailable. Content-level historical comparison cannot be performed."
+                }
+
+        # 6. NTFS USN Metadata for this specific file
+        file_usn = cls.read_file_usn_data(abs_path)
+        usn_records_for_file = []
+        raw_usn_status = "Available" if file_usn else "Unavailable"
+        raw_usn_note = ""
+
+        # Check volume journal if elevated
+        volume_journal = cls.collect_usn_journal(drive_letter)
+        if volume_journal.get("status") == "available":
+            for r in volume_journal.get("records", []):
+                if r.get("file_name", "").lower() == file_name.lower():
+                    usn_records_for_file.append(r)
+        else:
+            raw_usn_note = volume_journal.get("reason", "NTFS USN Change Journal volume stream unavailable.")
+
+        # 7. Windows Event Logs & Auditing
+        event_logs_res = cls.collect_event_logs(hours=48)
+        auditing_status = event_logs_res.get("channel_status", {}).get(
+            "security_log",
+            "Windows file auditing was not configured; user attribution is unavailable."
+        )
+
+        # 8. Correlated USB / Removable Media
+        usb_res = cls.collect_usb_history()
+
+        return {
+            "exists": True,
+            "file_path": abs_path,
+            "file_name": file_name,
+            "extension": ext,
+            "file_size": file_size,
+            "creation_time": ctime,
+            "modification_time": mtime,
+            "access_time": atime,
+            "volume": drive_letter,
+            "filesystem": filesystem_type,
+            "file_owner": file_owner,
+            "current_sha256": current_sha256,
+            "current_md5": current_md5,
+            "baseline_sha256": baseline_sha or "Unavailable",
+            "is_hash_diverged": is_diverged,
+            "is_pdf": ext == ".pdf",
+            "pdf_comparison": pdf_comparison,
+            "usn_metadata": file_usn or "Unavailable",
+            "usn_volume_records": usn_records_for_file,
+            "usn_stream_status": raw_usn_note or "Available",
+            "auditing_status": auditing_status,
+            "pnp_hardware_events": event_logs_res.get("events", [])[:10],
+            "connected_usb_devices": usb_res.get("devices", []),
+            "collected_at": datetime.now(timezone.utc).isoformat()
+        }
+

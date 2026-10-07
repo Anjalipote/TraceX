@@ -873,6 +873,90 @@ class TraceXAgent:
         }
 
 
+    def inspect_target_file(self, target_path: str, case_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Performs targeted forensic inspection on an original Windows file.
+        Collects on-disk metadata, SHA-256 hash, USN file reference, event logs, and USB activity.
+        Transmits inspected file directly to TraceX backend.
+        """
+        cid = case_id or self.case_id
+        abs_path = os.path.abspath(target_path)
+        print(f"\n[TraceX Agent] Target File Forensic Inspection: {abs_path}")
+        print("=" * 70)
+
+        if not os.path.exists(abs_path):
+            print(f"[Error] Target file does not exist on disk: {abs_path}")
+            return {"error": "File not found", "path": abs_path}
+
+        # 1. Physical metadata & Hash
+        stat = os.stat(abs_path)
+        size_bytes = stat.st_size
+        ctime = datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat()
+        mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+        atime = datetime.fromtimestamp(stat.st_atime, tz=timezone.utc).isoformat()
+        sha256_hash = self.calculate_file_hash(abs_path) or "Unavailable"
+
+        print(f"  • Absolute Path: {abs_path}")
+        print(f"  • File Size:     {size_bytes:,} bytes")
+        print(f"  • SHA-256 Digest:{sha256_hash}")
+        print(f"  • Created Time:  {ctime}")
+        print(f"  • Modified Time: {mtime}")
+        print(f"  • Accessed Time: {atime}")
+
+        # 2. Per-file USN Journal FileRef
+        usn_data = self.read_file_usn_data(abs_path)
+        usn_fileref = usn_data.get("file_ref", "Unavailable") if usn_data else "Unavailable"
+        print(f"  • USN File Ref:  {usn_fileref}")
+
+        # 3. Baseline comparison
+        baseline_record = self.baseline_manifest.get(abs_path)
+        baseline_sha = baseline_record.get("sha256") if baseline_record else None
+        is_diverged = bool(baseline_sha and baseline_sha != sha256_hash)
+        if baseline_sha:
+            print(f"  • Baseline Hash: {baseline_sha}")
+            print(f"  • Divergence:    {'DIVERGED (Altered)' if is_diverged else 'MATCHING (Intact)'}")
+        else:
+            print("  • Baseline Hash: Unavailable (Initial observation)")
+
+        # 4. Notify Backend / Select-File API
+        payload = {
+            "computer_id": self.hostname,
+            "case_id": cid,
+            "file_path": abs_path
+        }
+        res = self.send_http_request(f"/investigations/{cid}/select-file", payload)
+        if res:
+            print(f"  ✓ Associated with TraceX Case {cid}: File verified.")
+        else:
+            print("  [Warning] Backend select-file endpoint returned no response.")
+
+        # 5. Run Targeted Historical Scan
+        print("\n[TraceX Agent] Running targeted historical forensic correlation...")
+        scan_payload = {
+            "computer_id": self.hostname,
+            "case_id": cid,
+            "target_file_path": abs_path,
+            "investigation_mode": "historical",
+            "collection_type": "live",
+            "hours": 24
+        }
+        scan_res = self.send_http_request("/investigations/scan", scan_payload)
+        if scan_res:
+            print(f"  ✓ Historical Scan Completed: {scan_res.get('artifacts_collected', 0)} artifacts collected.")
+            print(f"    Scan ID: {scan_res.get('scan_id')}")
+
+        return {
+            "path": abs_path,
+            "size": size_bytes,
+            "sha256": sha256_hash,
+            "ctime": ctime,
+            "mtime": mtime,
+            "atime": atime,
+            "usn_fileref": usn_fileref,
+            "is_diverged": is_diverged
+        }
+
+
 class AgentEventHandler(FileSystemEventHandler):
     def __init__(self, agent: TraceXAgent):
         super().__init__()
@@ -910,8 +994,9 @@ class AgentEventHandler(FileSystemEventHandler):
 
 def main():
     parser = argparse.ArgumentParser(description="TraceX Windows Endpoint Collection Agent")
-    parser.add_argument("command", choices=["start", "collect", "historical", "status", "simulate-pdf"], help="Agent command")
+    parser.add_argument("command", choices=["start", "collect", "historical", "status", "simulate-pdf", "inspect"], help="Agent command")
     parser.add_argument("--config", default="config.json", help="Path to config.json")
+    parser.add_argument("--file", default=None, help="Target file path to inspect/monitor")
     parser.add_argument("--dir", default=None, help="Directory to monitor/scan")
     parser.add_argument("--hours", type=int, default=24, help="Historical time window in hours")
     parser.add_argument("--case-id", default=None, help="Case ID to assign collection to")
@@ -920,6 +1005,10 @@ def main():
     agent = TraceXAgent(config_path=args.config)
     if args.dir:
         agent.monitored_paths = [args.dir]
+    elif args.file:
+        file_dir = os.path.dirname(os.path.abspath(args.file))
+        if os.path.exists(file_dir):
+            agent.monitored_paths = [file_dir]
     if args.case_id:
         agent.case_id = args.case_id
 
@@ -927,6 +1016,12 @@ def main():
         agent.start()
     elif args.command in ["collect", "historical"]:
         agent.run_historical_collection(hours=args.hours, case_id=args.case_id)
+    elif args.command == "inspect":
+        target = args.file or (args.dir if os.path.isfile(args.dir) else None)
+        if not target:
+            print("[Error] Please specify a file to inspect using --file <filepath>")
+            sys.exit(1)
+        agent.inspect_target_file(target, case_id=args.case_id)
     elif args.command == "status":
         res = agent.send_http_request("/agent/status", {})
         if res:

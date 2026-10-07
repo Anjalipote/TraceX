@@ -97,11 +97,11 @@ export const FindingsPage: React.FC = () => {
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <h3 className="text-sm font-bold font-mono text-[#F8FAFC]">
-              No Forensic Threat Findings Detected
+              {findings.length === 0 ? "No findings." : "No findings match filter."}
             </h3>
             <p className="text-xs text-[#94A3B8] max-w-md mx-auto">
               {findings.length === 0 
-                ? "Active case artifacts were evaluated clean. Zero malicious script execution, magic-byte mismatches, timestomping, or data exfiltration indicators identified."
+                ? "No correlated forensic findings or behavioral anomalies have been identified for this investigation."
                 : "No findings match the selected filter criteria."}
             </p>
           </div>

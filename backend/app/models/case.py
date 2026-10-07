@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import uuid
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -16,6 +16,14 @@ class Case(Base):
     incident_type = Column(String(64), default="Data Exfiltration", nullable=False)
     target_system = Column(String(128), default="FINANCE-SRV-04", nullable=False)
     investigator_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    
+    # Real Forensic Investigation Fields
+    is_real_investigation = Column(Boolean, default=False, nullable=True)
+    collection_type = Column(String(32), default="demo", nullable=True)  # "real" or "demo"
+    computer_id = Column(String(128), nullable=True)
+    target_file_path = Column(String(512), nullable=True)
+    authorization_status = Column(String(32), default="Pending", nullable=True)  # Pending, Authorized, Revoked
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 

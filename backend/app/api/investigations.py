@@ -16,6 +16,15 @@ from app.models.finding import Finding
 from app.models.agent_host import AgentHost
 from app.models.collection_job import CollectionJob
 from app.models.forensic_event import ForensicEvent
+from app.models.investigation_file import InvestigationFile
+from app.models.file_artifact import (
+    FileMetadata,
+    FileHash,
+    FileVersion,
+    WindowsEventRecord,
+    UsnEventRecord,
+    DeviceEventRecord,
+)
 from app.services.audit_service import AuditService
 from app.services.collector_service import WindowsForensicCollector
 from app.services.correlation_service import CorrelationEngine
@@ -60,9 +69,34 @@ class AuthorizeResponse(BaseModel):
     read_only_guarantee: bool
     notice: str
 
+class SelectFileRequest(BaseModel):
+    computer_id: str = "EMP-LT-001"
+    file_path: str
+    case_id: Optional[str] = "TRX-001"
+    reference_storage_path: Optional[str] = None
+
+class SelectFileResponse(BaseModel):
+    case_id: str
+    computer_id: str
+    file_path: str
+    file_name: str
+    file_exists: bool
+    file_size: int
+    current_sha256: str
+    creation_time: str
+    modification_time: str
+    access_time: str
+    baseline_sha256: str
+    is_hash_diverged: bool
+    is_pdf: bool
+    usn_file_ref: str
+    status: str
+    message: str
+
 class ScanRequest(BaseModel):
     computer_id: str = "EMP-LT-001"
     case_id: Optional[str] = "TRX-001"
+    target_file_path: Optional[str] = None
     investigation_mode: Optional[str] = "historical"  # "historical" or "live"
     collection_type: str = "demo"  # "demo" or "live"
     hours: Optional[int] = 24
@@ -234,6 +268,183 @@ def authorize_investigation(
     )
 
 
+@router.post("/select-file", response_model=SelectFileResponse)
+@router.post("/{case_id}/select-file", response_model=SelectFileResponse)
+def select_target_file(
+    req: SelectFileRequest,
+    case_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Step 3: Validates and inspects the original target file on the Windows laptop.
+    Captures live filesystem metadata, computes SHA-256, and links to investigation.
+    """
+    active_case_id = case_id or req.case_id or "TRX-001"
+    
+    # Ensure Case exists
+    case = db.query(Case).filter((Case.id == active_case_id) | (Case.case_number == active_case_id)).first()
+    if not case:
+        case = Case(
+            id=active_case_id,
+            case_number=active_case_id,
+            name=f"Forensic Investigation: {os.path.basename(req.file_path)}",
+            description=f"Investigation into {req.file_path} on {req.computer_id}.",
+            status="In Progress",
+            priority="High",
+            incident_type="Data Modification",
+            target_system=req.computer_id,
+            investigator_id=current_user.id,
+            is_real_investigation=True,
+            collection_type="real" if req.computer_id != "EMP-LT-001" else "demo",
+            computer_id=req.computer_id,
+            target_file_path=req.file_path,
+            authorization_status="Authorized"
+        )
+        db.add(case)
+    else:
+        case.target_file_path = req.file_path
+        case.computer_id = req.computer_id
+
+    # Resolve baseline dir
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    baseline_cache_dir = os.path.join(base_dir, "agent", ".tracex_baseline")
+    baseline_manifest_file = os.path.join(baseline_cache_dir, "baseline_manifest.json")
+    baseline_manifest = {}
+    if os.path.exists(baseline_manifest_file):
+        try:
+            with open(baseline_manifest_file, "r", encoding="utf-8") as bf:
+                baseline_manifest = json.load(bf)
+        except Exception:
+            pass
+
+    # Perform real on-disk inspection
+    inspection = WindowsForensicCollector.inspect_target_file(
+        file_path=req.file_path,
+        baseline_manifest=baseline_manifest,
+        baseline_cache_dir=baseline_cache_dir
+    )
+
+    if not inspection.get("exists"):
+        db.commit()
+        return SelectFileResponse(
+            case_id=active_case_id,
+            computer_id=req.computer_id,
+            file_path=req.file_path,
+            file_name=os.path.basename(req.file_path),
+            file_exists=False,
+            file_size=0,
+            current_sha256="Unavailable",
+            creation_time="Unavailable",
+            modification_time="Unavailable",
+            access_time="Unavailable",
+            baseline_sha256="Unavailable",
+            is_hash_diverged=False,
+            is_pdf=req.file_path.lower().endswith(".pdf"),
+            usn_file_ref="Unavailable",
+            status="Unavailable",
+            message=f"Target file not found on computer: {req.file_path}"
+        )
+
+    # File exists! Record into InvestigationFile
+    now_utc = datetime.now(timezone.utc)
+    inv_file = db.query(InvestigationFile).filter(
+        InvestigationFile.investigation_id == active_case_id,
+        InvestigationFile.original_file_path == inspection["file_path"]
+    ).first()
+
+    if not inv_file:
+        inv_file = InvestigationFile(
+            investigation_id=active_case_id,
+            computer_id=req.computer_id,
+            original_file_path=inspection["file_path"],
+            file_name=inspection["file_name"],
+            extension=inspection["extension"],
+            file_size=inspection["file_size"],
+            current_sha256=inspection["current_sha256"],
+            baseline_sha256=inspection["baseline_sha256"] if inspection["baseline_sha256"] != "Unavailable" else None,
+            is_hash_diverged=inspection["is_hash_diverged"],
+            volume=inspection["volume"],
+            filesystem=inspection["filesystem"],
+            creation_time=datetime.fromisoformat(inspection["creation_time"]) if inspection["creation_time"] != "Unavailable" else None,
+            modification_time=datetime.fromisoformat(inspection["modification_time"]) if inspection["modification_time"] != "Unavailable" else None,
+            access_time=datetime.fromisoformat(inspection["access_time"]) if inspection["access_time"] != "Unavailable" else None,
+            is_pdf=inspection["is_pdf"],
+            pdf_diff_available=bool((inspection.get("pdf_comparison") or {}).get("has_changes")),
+            pdf_comparison_summary=(inspection.get("pdf_comparison") or {}).get("message") or (inspection.get("pdf_comparison") or {}).get("summary"),
+            status="Investigating",
+            reference_storage_path=req.reference_storage_path
+        )
+        db.add(inv_file)
+    else:
+        inv_file.current_sha256 = inspection["current_sha256"]
+        inv_file.file_size = inspection["file_size"]
+        inv_file.is_hash_diverged = inspection["is_hash_diverged"]
+        inv_file.status = "Investigating"
+
+    # Also log into FileMetadata
+    meta_rec = FileMetadata(
+        investigation_id=active_case_id,
+        computer_id=req.computer_id,
+        file_path=inspection["file_path"],
+        file_name=inspection["file_name"],
+        extension=inspection["extension"],
+        file_size=inspection["file_size"],
+        creation_time=datetime.fromisoformat(inspection["creation_time"]) if inspection["creation_time"] != "Unavailable" else None,
+        modification_time=datetime.fromisoformat(inspection["modification_time"]) if inspection["modification_time"] != "Unavailable" else None,
+        access_time=datetime.fromisoformat(inspection["access_time"]) if inspection["access_time"] != "Unavailable" else None,
+        volume=inspection["volume"],
+        filesystem=inspection["filesystem"],
+        owner=inspection["file_owner"]
+    )
+    db.add(meta_rec)
+
+    # Also log into FileHash
+    hash_rec = FileHash(
+        investigation_id=active_case_id,
+        computer_id=req.computer_id,
+        file_path=inspection["file_path"],
+        sha256=inspection["current_sha256"],
+        md5=inspection["current_md5"] if inspection["current_md5"] != "Unavailable" else None,
+        file_size=inspection["file_size"],
+        is_current=True
+    )
+    db.add(hash_rec)
+
+    db.commit()
+
+    return SelectFileResponse(
+        case_id=active_case_id,
+        computer_id=req.computer_id,
+        file_path=inspection["file_path"],
+        file_name=inspection["file_name"],
+        file_exists=True,
+        file_size=inspection["file_size"],
+        current_sha256=inspection["current_sha256"],
+        creation_time=inspection["creation_time"],
+        modification_time=inspection["modification_time"],
+        access_time=inspection["access_time"],
+        baseline_sha256=str(inspection["baseline_sha256"]),
+        is_hash_diverged=inspection["is_hash_diverged"],
+        is_pdf=inspection["is_pdf"],
+        usn_file_ref=str(inspection.get("usn_metadata", {}).get("file_ref", "Unavailable") if isinstance(inspection.get("usn_metadata"), dict) else "Unavailable"),
+        status="Target File Verified & Registered",
+        message=f"Target file successfully verified on {req.computer_id}. SHA-256: {inspection['current_sha256'][:16]}..."
+    )
+
+
+@router.get("/{case_id}/selected-file")
+def get_selected_target_file(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    inv_file = db.query(InvestigationFile).filter(InvestigationFile.investigation_id == case_id).order_by(InvestigationFile.created_at.desc()).first()
+    if not inv_file:
+        return {"selected": False, "message": "No file has been selected for this investigation yet."}
+    return {"selected": True, "file": inv_file.to_dict()}
+
+
 @router.post("/scan", response_model=ScanResponse)
 def execute_forensic_scan(
     req: ScanRequest,
@@ -323,6 +534,46 @@ def execute_forensic_scan(
             baseline_cache_dir=baseline_cache_dir
         )
 
+        # 1.1 Target File Focused Investigation if specified
+        target_file_path = req.target_file_path or case.target_file_path
+        if target_file_path:
+            target_inspection = WindowsForensicCollector.inspect_target_file(
+                file_path=target_file_path,
+                baseline_manifest=baseline_manifest,
+                baseline_cache_dir=baseline_cache_dir
+            )
+            if target_inspection.get("exists"):
+                candidate_files = [c for c in candidate_files if c.get("file_path") != target_inspection["file_path"]]
+                candidate_files.insert(0, {
+                    "file_name": target_inspection["file_name"],
+                    "file_path": target_inspection["file_path"],
+                    "file_size": target_inspection["file_size"],
+                    "extension": target_inspection["extension"],
+                    "sha256": target_inspection["current_sha256"],
+                    "baseline_sha256": target_inspection["baseline_sha256"] if target_inspection["baseline_sha256"] != "Unavailable" else None,
+                    "is_baseline_diverged": target_inspection["is_hash_diverged"],
+                    "mtime": target_inspection["modification_time"] if target_inspection["modification_time"] != "Unavailable" else now_iso,
+                    "ctime": target_inspection["creation_time"] if target_inspection["creation_time"] != "Unavailable" else now_iso,
+                    "atime": target_inspection["access_time"] if target_inspection["access_time"] != "Unavailable" else now_iso,
+                    "usn_data": target_inspection.get("usn_metadata") if isinstance(target_inspection.get("usn_metadata"), dict) else None,
+                    "source": "Target File NTFS Inspection",
+                    "pdf_diff": target_inspection.get("pdf_comparison")
+                })
+
+                if target_inspection["is_pdf"]:
+                    pdf_comp = target_inspection.get("pdf_comparison") or {}
+                    ver_rec = FileVersion(
+                        investigation_id=case_id,
+                        computer_id=req.computer_id,
+                        file_path=target_inspection["file_path"],
+                        version_label="Current Inspection",
+                        sha256=target_inspection["current_sha256"],
+                        source="Live Forensic File Investigation",
+                        content_diff_summary=pdf_comp.get("summary") or pdf_comp.get("message"),
+                        changed_pages_json=pdf_comp.get("changed_pages", [])
+                    )
+                    db.add(ver_rec)
+
         # 2. USB Registry Collection
         usb_result = WindowsForensicCollector.collect_usb_history()
 
@@ -332,7 +583,7 @@ def execute_forensic_scan(
         # 4. NTFS USN Journal Collection
         usn_result = WindowsForensicCollector.collect_usn_journal()
 
-        # Ingest File Events into ForensicEvent table
+        # Ingest File Events into ForensicEvent, FileMetadata, and FileHash tables
         now_dt = datetime.now(timezone.utc)
         for cf in candidate_files:
             evt_type = "FILE_MODIFIED" if cf.get("is_baseline_diverged") else "FILE_ACCESSED"
@@ -353,7 +604,7 @@ def execute_forensic_scan(
                 file_size=cf["file_size"],
                 file_hash=cf["sha256"],
                 previous_hash=cf.get("baseline_sha256"),
-                raw_artifact_source="NTFS File Metadata Scan",
+                raw_artifact_source=cf.get("source", "NTFS File Metadata Scan"),
                 details={
                     "ctime": cf.get("ctime"),
                     "mtime": cf.get("mtime"),
@@ -364,7 +615,32 @@ def execute_forensic_scan(
             )
             db.add(fevt)
 
-        # Ingest USN Journal records if available (when elevated or queried)
+            fmeta = FileMetadata(
+                investigation_id=case_id,
+                computer_id=req.computer_id,
+                file_path=cf["file_path"],
+                file_name=cf["file_name"],
+                extension=cf.get("extension"),
+                file_size=cf.get("file_size", 0),
+                modification_time=mtime_val,
+                creation_time=datetime.fromisoformat(cf["ctime"]) if cf.get("ctime") else mtime_val,
+                access_time=datetime.fromisoformat(cf["atime"]) if cf.get("atime") else mtime_val,
+                volume="C:",
+                filesystem="NTFS"
+            )
+            db.add(fmeta)
+
+            fhash = FileHash(
+                investigation_id=case_id,
+                computer_id=req.computer_id,
+                file_path=cf["file_path"],
+                sha256=cf["sha256"] or "Unavailable",
+                file_size=cf.get("file_size", 0),
+                is_current=True
+            )
+            db.add(fhash)
+
+        # Ingest USN Journal records if available into ForensicEvent and UsnEventRecord
         for rec in usn_result.get("records", []):
             rec_ts = now_dt
             try:
@@ -388,7 +664,22 @@ def execute_forensic_scan(
             )
             db.add(fevt)
 
-        # Ingest USB Events into ForensicEvent table
+            usn_rec = UsnEventRecord(
+                investigation_id=case_id,
+                computer_id=req.computer_id,
+                volume=rec.get("volume", "C:"),
+                usn=str(rec.get("usn", "0")),
+                file_ref=str(rec.get("file_ref", "0")),
+                parent_file_ref=str(rec.get("parent_file_ref", "0")),
+                reason_code=str(rec.get("reason_code", "0")),
+                change_reason=rec.get("change_reason", "USN_REASON_DATA_MODIFIED"),
+                timestamp=rec_ts,
+                file_name=rec.get("file_name", "Unknown"),
+                file_path=f"{rec.get('volume', 'C:')}\\{rec.get('file_name', 'Unknown')}"
+            )
+            db.add(usn_rec)
+
+        # Ingest USB Events into ForensicEvent and DeviceEventRecord tables
         for u in usb_result.get("devices", []):
             fevt = ForensicEvent(
                 investigation_id=case_id,
@@ -407,8 +698,20 @@ def execute_forensic_scan(
             )
             db.add(fevt)
 
-        # Ingest System & PnP Log Events into ForensicEvent table
-        for el in event_result.get("events", [])[:25]:
+            dev_rec = DeviceEventRecord(
+                investigation_id=case_id,
+                computer_id=req.computer_id,
+                device_name=u.get("friendly_name", "USB Storage Device"),
+                serial_number=u.get("serial_number"),
+                hardware_id=u.get("hardware_id"),
+                event_type="ATTACHED",
+                timestamp=now_dt,
+                source="HKLM\\SYSTEM\\CurrentControlSet\\Enum\\USBSTOR"
+            )
+            db.add(dev_rec)
+
+        # Ingest System & PnP Log Events into ForensicEvent and WindowsEventRecord tables
+        for el in event_result.get("events", [])[:30]:
             fevt = ForensicEvent(
                 investigation_id=case_id,
                 job_id=job.id,
@@ -422,6 +725,17 @@ def execute_forensic_scan(
                 details=el
             )
             db.add(fevt)
+
+            wevt_rec = WindowsEventRecord(
+                investigation_id=case_id,
+                computer_id=req.computer_id,
+                log_channel=el.get("log", "System"),
+                event_id=str(el.get("event_id", "0")),
+                timestamp=now_dt,
+                user=el.get("user", "SYSTEM"),
+                description=el.get("description", "")[:400]
+            )
+            db.add(wevt_rec)
 
         db.commit()
 

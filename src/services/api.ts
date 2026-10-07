@@ -1135,9 +1135,49 @@ export const api = {
     };
   },
 
+  async selectInvestigationFile(params: {
+    computer_id?: string;
+    case_id?: string;
+    file_path: string;
+    reference_storage_path?: string;
+  }): Promise<any> {
+    const caseId = params.case_id || 'TRX-001';
+    try {
+      const res = await fetch(`${API_BASE_URL}/investigations/${caseId}/select-file`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(params)
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return null;
+  },
+
+  async getSelectedFile(caseId: string = 'TRX-001'): Promise<any> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/investigations/${caseId}/selected-file`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return null;
+  },
+
   async startInvestigationScan(params: {
     computer_id: string;
     case_id?: string;
+    target_file_path?: string;
     investigation_mode?: 'historical' | 'live';
     collection_type?: string;
     hours?: number;

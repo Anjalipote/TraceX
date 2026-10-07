@@ -23,6 +23,8 @@ export const Topbar: React.FC = () => {
     selectCase, 
     investigator, 
     isTampered, 
+    investigationMode,
+    setInvestigationMode,
     searchQuery, 
     setSearchQuery,
     searchInvestigation,
@@ -221,25 +223,46 @@ export const Topbar: React.FC = () => {
           )}
         </div>
 
-        {/* Center: Live Endpoint Collector Status Badge */}
-        <div className="hidden md:flex items-center">
+        {/* Center: Real Forensic Mode vs Demo Benchmark Switcher */}
+        <div className="hidden md:flex items-center gap-3">
+          <div className="flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200">
+            <button
+              onClick={() => setInvestigationMode('real')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                investigationMode === 'real'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Real Investigation Mode: Authorized Windows Agent data only"
+            >
+              <span className={`w-2 h-2 rounded-full ${investigationMode === 'real' ? 'bg-white animate-pulse' : 'bg-slate-400'}`} />
+              <span>REAL FORENSIC MODE</span>
+            </button>
+            <button
+              onClick={() => setInvestigationMode('demo')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                investigationMode === 'demo'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Demo Mode: Synthetic benchmark data for demonstration"
+            >
+              <span>DEMO MODE</span>
+            </button>
+          </div>
+
           {agentStatus?.online_agents > 0 ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-mono shadow-xs">
+            <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-mono shadow-2xs">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="font-bold text-emerald-800">LIVE AGENT:</span>
+              <span className="font-bold text-emerald-800">AGENT:</span>
               <span className="text-emerald-700">
-                {agentStatus.agents?.find((a: any) => a.is_online)?.hostname || 'Active Endpoint'}
-              </span>
-              <span className="text-[10px] bg-emerald-200/70 text-emerald-900 px-1.5 py-0.5 rounded font-bold">
-                {agentStatus.agents?.reduce((acc: number, a: any) => acc + (a.total_events || 0), 0)} events
+                {agentStatus.agents?.find((a: any) => a.is_online)?.hostname || 'Online'}
               </span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono text-slate-600">
-              <span className="w-2 h-2 rounded-full bg-slate-400" />
-              <span className="font-semibold">MODE:</span>
-              <span>DEMO BENCHMARK</span>
-            </div>
+            <span className="text-[11px] font-mono text-slate-400">
+              Agent Standby
+            </span>
           )}
         </div>
 

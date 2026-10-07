@@ -35,6 +35,8 @@ interface AppContextType {
   logout: () => void;
   userRole: UserRole;
   setUserRole: (role: UserRole) => void;
+  investigationMode: 'real' | 'demo';
+  setInvestigationMode: (mode: 'real' | 'demo') => void;
   investigator: {
     name: string;
     badge: string;
@@ -96,6 +98,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Role Switched', `Active access authorization level set to ${role}.`, 'info');
   };
 
+  const [investigationMode, setInvestigationModeState] = useState<'real' | 'demo'>(() => {
+    return (localStorage.getItem('tracex_investigation_mode') as 'real' | 'demo') || 'real';
+  });
+
+  const setInvestigationMode = (mode: 'real' | 'demo') => {
+    setInvestigationModeState(mode);
+    localStorage.setItem('tracex_investigation_mode', mode);
+    showToast(
+      mode === 'real' ? 'Real Forensic Mode Activated' : 'Demo Mode Activated',
+      mode === 'real'
+        ? 'Connected to authorized Windows endpoint collectors. Displaying only live/historical on-disk forensic artifacts.'
+        : 'Displaying synthetic forensic benchmarks and sample exfiltration scenarios.',
+      mode === 'real' ? 'info' : 'warning'
+    );
+  };
+
   const [investigator] = useState({
     name: 'Specialist Alex Vance',
     badge: 'Badge #4092',
@@ -106,10 +124,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [cases, setCases] = useState<CaseItem[]>(INITIAL_CASES);
   const [currentCaseId, setCurrentCaseId] = useState<string>('CASE-2026-001');
-  const [evidence, setEvidence] = useState<EvidenceItem[]>(INITIAL_EVIDENCE);
-  const [timeline, setTimeline] = useState<TimelineEventItem[]>(INITIAL_TIMELINE);
-  const [findings, setFindings] = useState<FindingItem[]>(INITIAL_FINDINGS);
-  const [riskFactors, setRiskFactors] = useState<RiskFactorItem[]>(INITIAL_RISK_FACTORS);
+  const [evidence, setEvidence] = useState<EvidenceItem[]>(() => {
+    return localStorage.getItem('tracex_investigation_mode') === 'demo' ? INITIAL_EVIDENCE : [];
+  });
+  const [timeline, setTimeline] = useState<TimelineEventItem[]>(() => {
+    return localStorage.getItem('tracex_investigation_mode') === 'demo' ? INITIAL_TIMELINE : [];
+  });
+  const [findings, setFindings] = useState<FindingItem[]>(() => {
+    return localStorage.getItem('tracex_investigation_mode') === 'demo' ? INITIAL_FINDINGS : [];
+  });
+  const [riskFactors, setRiskFactors] = useState<RiskFactorItem[]>(() => {
+    return localStorage.getItem('tracex_investigation_mode') === 'demo' ? INITIAL_RISK_FACTORS : [];
+  });
   const [riskSummary, setRiskSummary] = useState(RISK_SUMMARY as any);
   
   // Phase 3 & 4 States
@@ -155,27 +181,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         api.getReports(currentCaseId)
       ]);
       if (Array.isArray(liveCases)) setCases(liveCases);
-      if (Array.isArray(liveEvidence)) setEvidence(liveEvidence);
-      if (Array.isArray(liveTimeline)) setTimeline(liveTimeline);
-      if (Array.isArray(liveFindings)) setFindings(liveFindings);
-      if (liveRisk) {
-        setRiskSummary(liveRisk.summary as any);
-        setRiskFactors(liveRisk.factors || []);
+
+      if (investigationMode === 'real') {
+        // Step 14: Real Investigation Mode must start completely EMPTY until actual collection occurs
+        setEvidence(Array.isArray(liveEvidence) ? liveEvidence : []);
+        setTimeline(Array.isArray(liveTimeline) ? liveTimeline : []);
+        setFindings(Array.isArray(liveFindings) ? liveFindings : []);
+        setActivityClusters(Array.isArray(liveClusters) ? liveClusters : []);
+        setAnomalies(Array.isArray(liveAnomalies) ? liveAnomalies : []);
+        if (liveRisk) {
+          setRiskSummary(liveRisk.summary as any);
+          setRiskFactors(liveRisk.factors || []);
+        } else {
+          setRiskFactors([]);
+        }
+      } else {
+        // Demo Benchmark Mode
+        if (Array.isArray(liveEvidence) && liveEvidence.length > 0) setEvidence(liveEvidence);
+        else setEvidence(INITIAL_EVIDENCE);
+
+        if (Array.isArray(liveTimeline) && liveTimeline.length > 0) setTimeline(liveTimeline);
+        else setTimeline(INITIAL_TIMELINE);
+
+        if (Array.isArray(liveFindings) && liveFindings.length > 0) setFindings(liveFindings);
+        else setFindings(INITIAL_FINDINGS);
+
+        if (liveRisk) {
+          setRiskSummary(liveRisk.summary as any);
+          setRiskFactors(liveRisk.factors || INITIAL_RISK_FACTORS);
+        }
+        if (Array.isArray(liveClusters)) setActivityClusters(liveClusters);
+        if (Array.isArray(liveAnomalies)) setAnomalies(liveAnomalies);
       }
-      if (Array.isArray(liveClusters)) setActivityClusters(liveClusters);
-      if (Array.isArray(liveAnomalies)) setAnomalies(liveAnomalies);
+
       if (liveJob) setAnalysisJob(liveJob);
       if (Array.isArray(liveGaps)) setEvidenceGaps(liveGaps);
       if (Array.isArray(liveActivity)) setCaseActivity(liveActivity);
       if (Array.isArray(liveReports)) setReports(liveReports);
     } catch {
-      // Retains demo fallback silently
+      if (investigationMode === 'real') {
+        setEvidence([]);
+        setTimeline([]);
+        setFindings([]);
+        setRiskFactors([]);
+      } else {
+        setEvidence(INITIAL_EVIDENCE);
+        setTimeline(INITIAL_TIMELINE);
+        setFindings(INITIAL_FINDINGS);
+        setRiskFactors(INITIAL_RISK_FACTORS);
+      }
     }
   };
 
   useEffect(() => {
     refreshData();
-  }, [currentCaseId, userRole]);
+  }, [currentCaseId, userRole, investigationMode]);
 
   const showToast = (title: string, message: string, type: ToastItem['type'] = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -348,6 +408,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       logout,
       userRole,
       setUserRole,
+      investigationMode,
+      setInvestigationMode,
       investigator,
       cases,
       currentCase,
