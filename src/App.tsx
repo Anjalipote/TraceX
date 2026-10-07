@@ -18,6 +18,7 @@ import { ExplainabilityPage } from './pages/ExplainabilityPage';
 import { AuditPage } from './pages/AuditPage';
 import { CaseComparePage } from './pages/CaseComparePage';
 import { ForensicInvestigationPage } from './pages/ForensicInvestigationPage';
+import { IntroPage } from './pages/IntroPage';
 
 // Protected Route Wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -40,6 +41,10 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 export function AppRoutes() {
   return (
     <Routes>
+      {/* Intro / Landing Page as Initial Route */}
+      <Route path="/" element={<IntroPage />} />
+      <Route path="/intro" element={<IntroPage />} />
+
       {/* Public Login Route */}
       <Route
         path="/login"
@@ -52,14 +57,12 @@ export function AppRoutes() {
 
       {/* Protected App Routes inside AppLayout */}
       <Route
-        path="/"
         element={
           <ProtectedRoute>
             <AppLayout />
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="forensic-access" element={<ForensicInvestigationPage />} />
         <Route path="investigate" element={<ForensicInvestigationPage />} />
@@ -78,7 +81,7 @@ export function AppRoutes() {
       </Route>
 
       {/* Fallback */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
