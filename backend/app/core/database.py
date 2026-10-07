@@ -22,11 +22,11 @@ def ensure_schema_columns():
         from sqlalchemy import text
         with engine.connect() as conn:
             for table, col, col_def in [
-                ("evidence", "is_live_agent", "BOOLEAN DEFAULT 0"),
+                ("evidence", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
                 ("evidence", "baseline_sha256", "VARCHAR(64)"),
                 ("evidence", "pdf_diff_data", "TEXT"),
-                ("timeline_events", "is_live_agent", "BOOLEAN DEFAULT 0"),
-                ("findings", "is_live_agent", "BOOLEAN DEFAULT 0"),
+                ("timeline_events", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
+                ("findings", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
                 ("forensic_events", "hardware_id", "VARCHAR(255)"),
             ]:
                 try:
