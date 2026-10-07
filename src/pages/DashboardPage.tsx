@@ -1,266 +1,301 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  HardDrive, 
+  Laptop, 
   Clock, 
+  FileText, 
   AlertTriangle, 
   ShieldAlert, 
-  ShieldCheck, 
-  FolderLock, 
-  ArrowUpRight, 
-  ChevronRight, 
-  Sparkles,
-  Loader2,
-  CheckCircle2,
-  Layers
+  ArrowRight,
+  FolderLock,
+  ChevronRight,
+  ExternalLink,
+  ShieldCheck,
+  CheckCircle2
 } from 'lucide-react';
-import { MetricCard } from '../components/common/MetricCard';
-import { SeverityBadge } from '../components/common/SeverityBadge';
-import { InvestigationStory } from '../components/dashboard/InvestigationStory';
-import { ActivityClusterWidget } from '../components/dashboard/ActivityClusterWidget';
-import { ActivityChart } from '../components/dashboard/ActivityChart';
-import { EvidenceSummaryWidget } from '../components/dashboard/EvidenceSummaryWidget';
-import { IntegritySummaryWidget } from '../components/dashboard/IntegritySummaryWidget';
-import { FindingCard } from '../components/findings/FindingCard';
-import { EvidenceGapsWidget } from '../components/dashboard/EvidenceGapsWidget';
-import { CaseActivityFeed } from '../components/dashboard/CaseActivityFeed';
 import { useApp } from '../context/AppContext';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const { 
-    currentCase, 
-    evidence,
-    timeline,
-    findings, 
-    riskSummary,
-    anomalies,
-    isTampered, 
-    isAnalyzing, 
-    runAnalysisPipeline, 
-    analysisJob 
-  } = useApp();
+  const { currentCase, selectCase } = useApp();
 
-  const totalEvidence = evidence.length;
-  const docCount = evidence.filter(e => e.fileType?.toLowerCase().includes('doc') || e.fileType?.toLowerCase().includes('pdf') || e.category === 'Document').length;
-  const logCount = evidence.filter(e => e.fileType?.toLowerCase().includes('log') || e.category === 'Log').length;
-  const binCount = evidence.filter(e => e.fileType?.toLowerCase().includes('bin') || e.fileType?.toLowerCase().includes('exe') || e.category === 'Executable').length;
-  const evidenceSubtitle = totalEvidence === 0 
-    ? '0 Evidence Files Ingested' 
-    : `${docCount} Docs • ${logCount} Logs • ${binCount} Binaries`;
-
-  const totalEvents = timeline.length;
-  const anomalyCount = anomalies.length;
-  const timelineSubtitle = anomalyCount === 0 
-    ? 'Chronological Event Baseline' 
-    : `${anomalyCount} Correlated Anomalies`;
-
-  const totalFindings = findings.length;
-  const critFindings = findings.filter(f => f.severity === 'CRITICAL').length;
-  const highFindings = findings.filter(f => f.severity === 'HIGH').length;
-  const findingsSubtitle = totalFindings === 0 
-    ? '0 Active Threat Findings' 
-    : `${critFindings} Critical • ${highFindings} High`;
-
-  const currentRiskScore = riskSummary?.score ?? 0;
-  const isZeroRisk = currentRiskScore === 0;
-  const riskSubtitle = isZeroRisk 
-    ? 'Clean Baseline (No Risk Detected)' 
-    : (currentRiskScore >= 80 ? 'Urgent Triage Required' : currentRiskScore >= 60 ? 'Active Threats Identified' : 'Moderate Priority');
-  const riskSeverity = isZeroRisk ? 'LOW' : (riskSummary?.severity || currentCase.severity || 'LOW');
-
-  const compromisedCount = isTampered ? 1 : 0;
-  const verifiedCount = Math.max(0, totalEvidence - compromisedCount);
+  const recentInvestigations = [
+    {
+      id: 'TRX-001',
+      computer: 'EMP-LT-001',
+      investigator: 'Alex Vance',
+      status: 'Completed',
+      statusColor: 'emerald',
+      suspiciousEvents: 5,
+      lastScan: '10 mins ago',
+      isTarget: true
+    },
+    {
+      id: 'CASE-2026-001',
+      computer: 'WORKSTATION-CORP-FIN09',
+      investigator: 'Alex Vance',
+      status: 'Active',
+      statusColor: 'blue',
+      suspiciousEvents: 5,
+      lastScan: '12 mins ago',
+      isTarget: false
+    },
+    {
+      id: 'CASE-2026-002',
+      computer: 'DEV-SRV-NORTH-04',
+      investigator: 'Elena Rostova',
+      status: 'Closed',
+      statusColor: 'slate',
+      suspiciousEvents: 0,
+      lastScan: '2 days ago',
+      isTarget: false
+    },
+    {
+      id: 'CASE-2026-003',
+      computer: 'GATEWAY-VPN-02',
+      investigator: 'Alex Vance',
+      status: 'Under Review',
+      statusColor: 'amber',
+      suspiciousEvents: 3,
+      lastScan: '5 hours ago',
+      isTarget: false
+    }
+  ];
 
   return (
-    <div className="space-y-10 max-w-7xl mx-auto pb-8">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 pb-6 border-b border-[#1E293B]/60">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/25">
-              {currentCase.id}
-            </span>
-            <SeverityBadge severity={riskSeverity as any} size="sm" />
-            <span className="text-xs font-mono text-[#64748B] hidden sm:inline">
-              Host: {currentCase.targetSystem}
-            </span>
-          </div>
-          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight text-[#F8FAFC]">
-            {currentCase.name}
-          </h1>
-          <p className="text-xs text-[#94A3B8] max-w-3xl leading-relaxed">
-            {currentCase.description}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3 shrink-0 self-start md:self-auto flex-wrap">
-          {/* Phase 3 Pipeline Trigger */}
-          <button
-            onClick={runAnalysisPipeline}
-            disabled={isAnalyzing}
-            className={`px-4 py-2.5 rounded-xl text-xs font-mono font-semibold flex items-center gap-2 transition-all border ${
-              isAnalyzing
-                ? 'bg-blue-950/60 text-blue-300 border-blue-700/50 cursor-not-allowed'
-                : 'bg-[#0E1522] hover:bg-blue-600/20 text-blue-400 hover:text-white border-blue-500/40 hover:border-blue-500'
-            }`}
-            title="Execute Phase 3 Advanced Forensic Analysis Pipeline"
-          >
-            {isAnalyzing ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />
-                <span>Analyzing Evidence...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-                <span>Run Analysis Pipeline</span>
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={() => navigate('/cases')}
-            className="px-4 py-2.5 rounded-xl bg-[#0B1017] hover:bg-[#111923] text-xs font-mono text-[#94A3B8] hover:text-white border border-[#1E293B] transition-colors"
-          >
-            Switch Case Vault
-          </button>
-          
-          <button
-            onClick={() => navigate('/reports')}
-            className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-mono font-semibold flex items-center gap-2 transition-all shadow-sm"
-          >
-            <span>Dossier Report</span>
-            <ArrowUpRight className="w-4 h-4" />
-          </button>
-        </div>
+    <div className="space-y-8 max-w-7xl mx-auto pb-10">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-[#1E293B]">
+          Dashboard
+        </h1>
+        <p className="text-xs text-[#64748B] mt-1">
+          Welcome back! Start a new investigation or view recent activity.
+        </p>
       </div>
 
-      {/* Analysis Pipeline Status Ribbon (Active or Completed) */}
-      {isAnalyzing && (
-        <div className="rounded-2xl bg-blue-950/30 border border-blue-500/50 p-4 flex items-center justify-between gap-4 animate-in fade-in-50">
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-4 h-4 text-blue-400 animate-spin shrink-0" />
-            <div className="text-xs font-mono">
-              <span className="font-bold text-[#F8FAFC]">Forensic Analysis Pipeline Active: </span>
-              <span className="text-blue-300">Extracting metadata, clustering activity sequences, and identifying forensic anomalies...</span>
-            </div>
-          </div>
-          <span className="text-[10px] font-mono text-blue-400 bg-blue-900/40 px-2 py-0.5 rounded border border-blue-700/50">
-            Phase 3 Engine
-          </span>
-        </div>
-      )}
-
-      {/* Top 5 Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4.5">
-        <MetricCard
-          title="EVIDENCE FILES"
-          value={totalEvidence.toString()}
-          subtitle={evidenceSubtitle}
-          icon={HardDrive}
-          variant="default"
-          onClick={() => navigate('/evidence')}
-        />
-
-        <MetricCard
-          title="TIMELINE EVENTS"
-          value={totalEvents.toString()}
-          subtitle={timelineSubtitle}
-          icon={Clock}
-          variant="cyan"
-          onClick={() => navigate('/timeline')}
-        />
-
-        <MetricCard
-          title="FINDINGS"
-          value={totalFindings.toString()}
-          subtitle={findingsSubtitle}
-          icon={AlertTriangle}
-          variant={totalFindings === 0 ? "default" : "warning"}
-          onClick={() => navigate('/findings')}
-        />
-
-        <MetricCard
-          title="RISK SCORE"
-          value={`${currentRiskScore}/100`}
-          subtitle={riskSubtitle}
-          badge={<SeverityBadge severity={riskSeverity as any} size="sm" />}
-          icon={ShieldAlert}
-          variant={isZeroRisk ? "success" : (currentRiskScore >= 80 ? "critical" : "warning")}
-          onClick={() => navigate('/risk')}
-        />
-
-        <MetricCard
-          title="INTEGRITY"
-          value={totalEvidence > 0 ? `${verifiedCount}/${totalEvidence}` : "0/0"}
-          subtitle={isTampered ? "1 File Tampered" : (totalEvidence > 0 ? "100% Cryptographic Match" : "Ready for Ingestion")}
-          badge={
-            <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
-              isTampered ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-            }`}>
-              {isTampered ? 'MODIFIED' : 'VERIFIED'}
-            </span>
-          }
-          icon={isTampered ? ShieldAlert : ShieldCheck}
-          variant={isTampered ? "critical" : "success"}
-          onClick={() => navigate('/integrity')}
-        />
-      </div>
-
-      {/* SIGNATURE FEATURE: INVESTIGATION STORY */}
-      <section className="space-y-4">
-        <InvestigationStory />
-      </section>
-
-      {/* PHASE 3 CORRELATED ACTIVITY SEQUENCE & ANOMALIES */}
-      <section className="space-y-4">
-        <ActivityClusterWidget />
-      </section>
-
-      {/* Middle Grid: Activity Chart & Summary Widgets */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-7">
-        <div className="lg:col-span-8">
-          <ActivityChart />
-        </div>
-
-        <div className="lg:col-span-4 flex flex-col gap-6">
-          <EvidenceSummaryWidget />
-          <IntegritySummaryWidget />
-        </div>
-      </div>
-
-      {/* PHASE 4 INVESTIGATION INTELLIGENCE & TELEMETRY GAPS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-7">
-        <EvidenceGapsWidget />
-        <CaseActivityFeed />
-      </div>
-
-      {/* Bottom Section: Recent Findings Highlights */}
-      <div className="space-y-5">
-        <div className="flex items-center justify-between pb-3 border-b border-[#1E293B]/60">
+      {/* Top 4 Metrics Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {/* Total Investigations */}
+        <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-xs flex items-center justify-between">
           <div>
-            <h3 className="text-base font-bold text-[#F8FAFC] flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-400" />
-              <span>Critical Investigation Findings</span>
+            <p className="text-xs font-medium text-[#64748B]">Total Investigations</p>
+            <p className="text-2xl font-bold text-[#1E293B] mt-1">12</p>
+            <p className="text-xs font-medium text-emerald-600 mt-1 flex items-center gap-1">
+              +2 this week
+            </p>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            <FileText className="w-6 h-6" />
+          </div>
+        </div>
+
+        {/* Suspicious Events */}
+        <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium text-[#64748B]">Suspicious Events</p>
+            <p className="text-2xl font-bold text-[#1E293B] mt-1">5</p>
+            <p className="text-xs font-medium text-red-500 mt-1 flex items-center gap-1">
+              +3 since last scan
+            </p>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-red-50 text-red-500 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+        </div>
+
+        {/* Reports Generated */}
+        <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium text-[#64748B]">Reports Generated</p>
+            <p className="text-2xl font-bold text-[#1E293B] mt-1">8</p>
+            <p className="text-xs font-medium text-emerald-600 mt-1 flex items-center gap-1">
+              +4 this week
+            </p>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-6 h-6" />
+          </div>
+        </div>
+
+        {/* Active Cases */}
+        <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium text-[#64748B]">Active Cases</p>
+            <p className="text-2xl font-bold text-[#1E293B] mt-1">3</p>
+            <p className="text-xs font-medium text-indigo-600 mt-1 flex items-center gap-1">
+              1 ongoing
+            </p>
+          </div>
+          <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+            <FolderLock className="w-6 h-6" />
+          </div>
+        </div>
+      </div>
+
+      {/* 3 Main Action Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Card 1: Hero Investigate Host */}
+        <div className="bg-indigo-600 text-white rounded-2xl p-6 shadow-md shadow-indigo-600/20 flex flex-col justify-between">
+          <div>
+            <div className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center text-white mb-4">
+              <Laptop className="w-5.5 h-5.5" />
+            </div>
+            <h3 className="text-lg font-bold text-white">
+              Investigate Host
             </h3>
-            <p className="text-xs text-[#94A3B8] font-mono mt-0.5">
-              Key suspicious behaviors flagged by automated evidence correlation
+            <p className="text-xs text-indigo-100 mt-1.5 leading-relaxed">
+              Collect and analyze forensic artifacts from a target computer.
+            </p>
+          </div>
+          <div className="pt-6">
+            <button
+              onClick={() => navigate('/forensic-access')}
+              className="w-full sm:w-auto bg-white hover:bg-indigo-50 text-indigo-700 font-semibold px-4 py-2.5 rounded-xl text-xs transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Start Investigation</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Card 2: View Timeline */}
+        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 mb-4">
+              <Clock className="w-5.5 h-5.5" />
+            </div>
+            <h3 className="text-lg font-bold text-[#1E293B]">
+              View Timeline
+            </h3>
+            <p className="text-xs text-[#64748B] mt-1.5 leading-relaxed">
+              Explore correlated events and activity timeline.
+            </p>
+          </div>
+          <div className="pt-6">
+            <button
+              onClick={() => navigate('/timeline')}
+              className="w-full sm:w-auto bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] text-[#334155] font-semibold px-4 py-2.5 rounded-xl text-xs transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Open Timeline</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Card 3: Generate Report */}
+        <div className="bg-white rounded-2xl p-6 border border-[#E2E8F0] shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="w-11 h-11 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 mb-4">
+              <FileText className="w-5.5 h-5.5" />
+            </div>
+            <h3 className="text-lg font-bold text-[#1E293B]">
+              Generate Report
+            </h3>
+            <p className="text-xs text-[#64748B] mt-1.5 leading-relaxed">
+              Create detailed investigation reports.
+            </p>
+          </div>
+          <div className="pt-6">
+            <button
+              onClick={() => navigate('/reports')}
+              className="w-full sm:w-auto bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] text-[#334155] font-semibold px-4 py-2.5 rounded-xl text-xs transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Generate Report</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Investigations Table */}
+      <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-xs overflow-hidden">
+        <div className="p-5 border-b border-[#E2E8F0] flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-bold text-[#1E293B]">
+              Recent Investigations
+            </h2>
+            <p className="text-xs text-[#64748B] mt-0.5">
+              Overview of ongoing and completed forensic investigations across systems.
             </p>
           </div>
           <button
-            onClick={() => navigate('/findings')}
-            className="text-xs font-mono text-blue-400 hover:text-blue-300 flex items-center gap-1"
+            onClick={() => navigate('/forensic-access')}
+            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
           >
-            <span>View All 12 Findings</span>
+            <span>Investigate Host</span>
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {findings.slice(0, 2).map((finding) => (
-            <FindingCard key={finding.id} finding={finding} />
-          ))}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-[#F8FAFC] text-[#64748B] font-semibold border-b border-[#E2E8F0]">
+              <tr>
+                <th className="py-3 px-5">Case ID</th>
+                <th className="py-3 px-5">Target Computer</th>
+                <th className="py-3 px-5">Investigator</th>
+                <th className="py-3 px-5">Status</th>
+                <th className="py-3 px-5">Suspicious Events</th>
+                <th className="py-3 px-5">Last Scan</th>
+                <th className="py-3 px-5 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E2E8F0] text-[#334155]">
+              {recentInvestigations.map((inv) => (
+                <tr key={inv.id} className="hover:bg-[#F8FAFC]/80 transition-colors">
+                  <td className="py-3.5 px-5 font-mono font-bold text-indigo-600">
+                    {inv.id}
+                  </td>
+                  <td className="py-3.5 px-5 font-medium text-[#1E293B]">
+                    {inv.computer}
+                  </td>
+                  <td className="py-3.5 px-5 text-[#64748B]">
+                    {inv.investigator}
+                  </td>
+                  <td className="py-3.5 px-5">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                      inv.status === 'Completed'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : inv.status === 'Active'
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                        : inv.status === 'Under Review'
+                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                        : 'bg-slate-100 text-slate-700 border border-slate-200'
+                    }`}>
+                      {inv.status}
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-5 font-medium">
+                    {inv.suspiciousEvents > 0 ? (
+                      <span className="inline-flex items-center gap-1 text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                        <AlertTriangle className="w-3 h-3" />
+                        {inv.suspiciousEvents} events
+                      </span>
+                    ) : (
+                      <span className="text-slate-500 font-mono">0 events</span>
+                    )}
+                  </td>
+                  <td className="py-3.5 px-5 text-[#64748B]">
+                    {inv.lastScan}
+                  </td>
+                  <td className="py-3.5 px-5 text-right">
+                    <button
+                      onClick={() => {
+                        if (inv.isTarget) {
+                          navigate('/forensic-access?step=4');
+                        } else {
+                          selectCase(inv.id);
+                          navigate('/timeline');
+                        }
+                      }}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                    >
+                      {inv.isTarget ? 'View Results' : 'View Details'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

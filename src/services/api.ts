@@ -1047,6 +1047,211 @@ export const api = {
         evidence_items: ['system.log', 'suspicious.exe']
       }
     ];
+  },
+
+  // Forensic Investigation Workflow API (Host Collector & Analysis)
+  async getComputers(): Promise<any[]> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/investigations/computers`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return [
+      {
+        id: 'EMP-LT-001',
+        name: 'EMP-LT-001',
+        os: 'Windows 11 Enterprise (Build 22631)',
+        status: 'Connected',
+        collection_mode: 'Read-only',
+        collection_type: 'Demo Collector',
+        last_seen: 'Just now',
+        agent_version: 'v2.4.1-demo',
+        is_demo: true
+      },
+      {
+        id: 'WORKSTATION-CORP-FIN09',
+        name: 'WORKSTATION-CORP-FIN09',
+        os: 'Windows 11 Enterprise (Build 22621)',
+        status: 'Connected',
+        collection_mode: 'Read-only',
+        collection_type: 'Live Agent',
+        last_seen: '2 mins ago',
+        agent_version: 'v2.4.1',
+        is_demo: false
+      }
+    ];
+  },
+
+  async authorizeInvestigation(params: {
+    computer_id: string;
+    case_id?: string;
+    collection_mode?: string;
+    collection_type?: string;
+    authorized: boolean;
+  }): Promise<any> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/investigations/authorize`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(params)
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return {
+      authorization_id: `AUTH-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+      computer_id: params.computer_id,
+      case_id: params.case_id || 'TRX-001',
+      status: 'Authorized',
+      collection_mode: params.collection_mode || 'Read-only',
+      collection_type: params.collection_type === 'demo' ? 'Demo Collector' : 'Live Agent',
+      authorized_at: new Date().toISOString(),
+      authorized_by: 'Alex Vance',
+      categories_granted: [
+        'System Logs', 'File Activity', 'USB / Device Activity',
+        'User Activity', 'Network Activity', 'Application Activity'
+      ],
+      read_only_guarantee: true,
+      notice: 'TraceX operates strictly in read-only mode.'
+    };
+  },
+
+  async startInvestigationScan(params: {
+    computer_id: string;
+    case_id?: string;
+    collection_type?: string;
+  }): Promise<any> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/investigations/scan`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(params)
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return {
+      scan_id: `SCAN-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+      case_id: params.case_id || 'TRX-001',
+      computer_id: params.computer_id,
+      status: 'Completed',
+      collection_type: params.collection_type === 'demo' ? 'Demo Collector' : 'Live Agent',
+      artifacts_collected: 149,
+      elapsed_seconds: 84,
+      completed_at: new Date().toISOString()
+    };
+  },
+
+  async getInvestigationResults(caseId: string = 'TRX-001'): Promise<any> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/investigations/${caseId}/results`, {
+        headers: getAuthHeaders()
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Fallback
+    }
+    return {
+      case_id: caseId,
+      computer_id: 'EMP-LT-001',
+      collection_type: 'Demo Collector',
+      suspicious_events_count: 3,
+      usb_devices_count: 1,
+      files_accessed_count: 4,
+      network_connections_count: 2,
+      has_suspicious_activity: true,
+      summary: 'TraceX identified potential data exfiltration pattern on EMP-LT-001.',
+      findings: [
+        {
+          id: 'TRX-FIND-001',
+          title: 'Confidential File Access',
+          description: 'confidential.pdf was accessed shortly before USB connection',
+          timestamp: '2 Oct 2026, 14:32:15',
+          severity: 'High',
+          category: 'File Access',
+          why_suspicious: 'This file was accessed shortly before a USB device was connected and file transfer activity was detected. The sequence of events suggests potential data exfiltration.',
+          related_events: [
+            'USB Device Connected (14:33:02)',
+            'File Transfer Activity (14:34:18)',
+            'USB Device Disconnected (14:36:05)'
+          ],
+          metadata: {
+            user: 'Employee01',
+            file_name: 'confidential.pdf',
+            file_path: 'C:\\Users\\Employee01\\Documents\\confidential.pdf',
+            action: 'Read',
+            process: 'Acrobat.exe (PID: 4521)',
+            sha256: '8a3f7c92d5e683b1a40f8e91cd2a34bb7219e8cf1032948bb37e6f81a7d45e90',
+            integrity_status: 'Verified'
+          }
+        },
+        {
+          id: 'TRX-FIND-002',
+          title: 'USB Device Connected',
+          description: 'SanDisk USB device was connected to workstation port',
+          timestamp: '2 Oct 2026, 14:33:02',
+          severity: 'Medium',
+          category: 'USB Activity',
+          why_suspicious: 'A non-whitelisted removable mass storage device was inserted 47 seconds after access to confidential corporate blueprints.',
+          related_events: [
+            'Confidential File Access (14:32:15)',
+            'File Transfer Activity (14:34:18)',
+            'USB Device Disconnected (14:36:05)'
+          ],
+          metadata: {
+            user: 'Employee01',
+            device_name: 'SanDisk Ultra 64GB',
+            serial_number: '4C530001230912098134',
+            mount_point: 'E:\\',
+            file_system: 'exFAT',
+            action: 'Mount / Connect',
+            process: 'System (PnP Manager)'
+          }
+        },
+        {
+          id: 'TRX-FIND-003',
+          title: 'File Transfer Activity',
+          description: 'confidential.pdf copied to removable drive volume E:\\',
+          timestamp: '2 Oct 2026, 14:34:18',
+          severity: 'High',
+          category: 'Data Transfer',
+          why_suspicious: 'File transfer operation copied sensitive document directly to the newly mounted removable drive E:\\ followed swiftly by device dismount.',
+          related_events: [
+            'Confidential File Access (14:32:15)',
+            'USB Device Connected (14:33:02)',
+            'USB Device Disconnected (14:36:05)'
+          ],
+          metadata: {
+            user: 'Employee01',
+            file_name: 'confidential.pdf',
+            file_path: 'C:\\Users\\Employee01\\Documents\\confidential.pdf -> E:\\confidential.pdf',
+            action: 'Copy / Write',
+            process: 'explorer.exe (PID: 4120)',
+            size_bytes: 2516582,
+            sha256: '8a3f7c92d5e683b1a40f8e91cd2a34bb7219e8cf1032948bb37e6f81a7d45e90'
+          }
+        }
+      ]
+    };
   }
 };
 

@@ -9,7 +9,8 @@ from app.api import (
     auth, cases, evidence, timeline, findings, 
     risk, relationships, reports, pipeline, 
     clusters, anomalies, search, audit, 
-    gaps, explainability, compare, users
+    gaps, explainability, compare, users,
+    investigations
 )
 
 @asynccontextmanager
@@ -94,6 +95,7 @@ app.include_router(audit.router, prefix=settings.API_V1_STR)
 app.include_router(gaps.router, prefix=settings.API_V1_STR)
 app.include_router(explainability.router, prefix=settings.API_V1_STR)
 app.include_router(users.router, prefix=settings.API_V1_STR)
+app.include_router(investigations.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 def root():

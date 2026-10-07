@@ -306,3 +306,49 @@ export interface ReportItem {
   filePath?: string;
 }
 
+export interface TargetComputer {
+  id: string;
+  name: string;
+  os: string;
+  status: string;
+  collectionMode: string;
+  collectionType: 'Live Agent' | 'Demo Collector';
+  lastSeen: string;
+  agentVersion: string;
+  isDemo: boolean;
+}
+
+export interface InvestigationStage {
+  id: string;
+  name: string;
+  status: 'completed' | 'scanning' | 'queued';
+  artifactsCount: number;
+  description: string;
+}
+
+export interface CorrelatedInvestigationFinding {
+  id: string;
+  title: string;
+  description: string;
+  timestamp: string;
+  severity: 'High' | 'Medium' | 'Low' | 'Critical';
+  category: string;
+  whySuspicious: string;
+  relatedEvents: string[];
+  metadata: {
+    user?: string;
+    fileName?: string;
+    filePath?: string;
+    action?: string;
+    process?: string;
+    sha256?: string;
+    integrityStatus?: string;
+    deviceName?: string;
+    serialNumber?: string;
+    mountPoint?: string;
+    sizeBytes?: number;
+    [key: string]: any;
+  };
+}
+
+

@@ -6,7 +6,7 @@ import { ToastContainer } from '../common/Toast';
 
 export const AppLayout: React.FC = () => {
   return (
-    <div className="min-h-screen bg-[#070A0F] text-[#F8FAFC] flex">
+    <div className="min-h-screen bg-[#F4F6F9] text-[#1E293B] flex">
       {/* Fixed Sidebar */}
       <Sidebar />
 

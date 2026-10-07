@@ -17,6 +17,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { ExplainabilityPage } from './pages/ExplainabilityPage';
 import { AuditPage } from './pages/AuditPage';
 import { CaseComparePage } from './pages/CaseComparePage';
+import { ForensicInvestigationPage } from './pages/ForensicInvestigationPage';
 
 // Protected Route Wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -60,6 +61,8 @@ export function AppRoutes() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="forensic-access" element={<ForensicInvestigationPage />} />
+        <Route path="investigate" element={<ForensicInvestigationPage />} />
         <Route path="cases" element={<CasesPage />} />
         <Route path="evidence" element={<EvidencePage />} />
         <Route path="timeline" element={<TimelinePage />} />
