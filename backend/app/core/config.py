@@ -14,7 +14,11 @@ def normalize_database_url(raw_url: Union[str, None] = None) -> str:
         return f"sqlite:///{default_sqlite}"
     # Standardize legacy postgres:// prefix to standard postgresql:// for SQLAlchemy 2.0
     if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql://", 1)
+        url = url.replace("postgres://", "postgresql://", 1)
+    # Ensure Render external URLs have sslmode=require
+    if "render.com" in url and "sslmode" not in url:
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}sslmode=require"
     return url
 
 def parse_cors_origins() -> List[str]:

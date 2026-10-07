@@ -54,7 +54,7 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.frontend
     container_name: tracex-frontend
     restart: always
     ports:
