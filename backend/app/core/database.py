@@ -27,6 +27,7 @@ def ensure_schema_columns():
                 ("evidence", "pdf_diff_data", "TEXT"),
                 ("timeline_events", "is_live_agent", "BOOLEAN DEFAULT 0"),
                 ("findings", "is_live_agent", "BOOLEAN DEFAULT 0"),
+                ("forensic_events", "hardware_id", "VARCHAR(255)"),
             ]:
                 try:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))

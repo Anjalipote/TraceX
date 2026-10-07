@@ -149,7 +149,7 @@ export const EvidenceDetailModal: React.FC<EvidenceDetailModalProps> = ({
               </h4>
             </div>
             <p className="text-xs text-amber-900/90 leading-relaxed font-medium">
-              {finding.whySuspicious}
+              {finding.whySuspicious || finding.why_suspicious || "Warrants forensic investigator review."}
             </p>
           </div>
 
@@ -162,7 +162,7 @@ export const EvidenceDetailModal: React.FC<EvidenceDetailModalProps> = ({
               </h4>
             </div>
             <ol className="space-y-2 text-xs">
-              {finding.relatedEvents.map((evt, idx) => (
+              {(finding.relatedEvents || finding.related_events || []).map((evt, idx) => (
                 <li key={idx} className="flex items-start gap-2.5 text-[#334155]">
                   <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">
                     {idx + 1}

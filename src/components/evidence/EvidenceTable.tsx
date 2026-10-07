@@ -33,7 +33,7 @@ export const EvidenceTable: React.FC<EvidenceTableProps> = ({
   const [localSearch, setLocalSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [severityFilter, setSeverityFilter] = useState<string>('ALL');
-  const [sourceFilter, setSourceFilter] = useState<'ALL' | 'LIVE' | 'DEMO'>('ALL');
+  const [sourceFilter, setSourceFilter] = useState<'ALL' | 'LIVE' | 'HISTORICAL' | 'DEMO'>('ALL');
   const [diffModalItem, setDiffModalItem] = useState<EvidenceItem | null>(null);
   const [sortField, setSortField] = useState<keyof EvidenceItem>('riskScore');
   const [sortAsc, setSortAsc] = useState<boolean>(false);
@@ -63,9 +63,11 @@ export const EvidenceTable: React.FC<EvidenceTableProps> = ({
 
       const matchesType = typeFilter === 'ALL' || item.category === typeFilter;
       const matchesSeverity = severityFilter === 'ALL' || item.severity === severityFilter;
+      const isHistorical = item.isLiveAgent && ((item.notes || '').includes('Metadata') || (item.notes || '').includes('USN') || (item.sourceLocation || '').includes('agent_test_evidence'));
       const matchesSource = 
         sourceFilter === 'ALL' || 
         (sourceFilter === 'LIVE' && item.isLiveAgent) || 
+        (sourceFilter === 'HISTORICAL' && isHistorical) ||
         (sourceFilter === 'DEMO' && !item.isLiveAgent);
 
       return matchesSearch && matchesType && matchesSeverity && matchesSource;
@@ -162,6 +164,7 @@ export const EvidenceTable: React.FC<EvidenceTableProps> = ({
               className="px-3 py-2 rounded-xl bg-[#080D15] border border-[#1E293B] text-xs text-[#F8FAFC] focus:outline-none focus:border-blue-500 font-mono"
             >
               <option value="ALL">All Sources</option>
+              <option value="HISTORICAL">📜 Historical Scan</option>
               <option value="LIVE">🟢 Live Agent Only</option>
               <option value="DEMO">🔵 Demo Benchmark Only</option>
             </select>
@@ -273,10 +276,16 @@ export const EvidenceTable: React.FC<EvidenceTableProps> = ({
                               {item.filename}
                             </p>
                             {item.isLiveAgent ? (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-700/60">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                LIVE AGENT
-                              </span>
+                              ((item.notes || '').includes('Metadata') || (item.notes || '').includes('USN') || (item.sourceLocation || '').includes('agent_test_evidence')) ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-indigo-950/60 text-indigo-400 border border-indigo-700/60">
+                                  HISTORICAL SCAN
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-700/60">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  LIVE AGENT
+                                </span>
+                              )
                             ) : (
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono text-slate-400 bg-slate-900 border border-slate-700">
                                 DEMO DATA

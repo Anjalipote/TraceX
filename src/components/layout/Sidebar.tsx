@@ -29,11 +29,11 @@ export const Sidebar: React.FC = () => {
 
   const mainNavigation: NavItem[] = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { name: 'Forensic Access', path: '/forensic-access', icon: Search },
+    { name: 'Forensic Investigation', path: '/forensic-access', icon: Search },
+    { name: 'Evidence', path: '/evidence', icon: HardDrive },
     { name: 'Timeline', path: '/timeline', icon: Clock },
     { name: 'Findings', path: '/findings', icon: AlertTriangle, badge: '5' },
     { name: 'Connections', path: '/graph', icon: GitFork },
-    { name: 'Evidence', path: '/evidence', icon: HardDrive },
     { name: 'Integrity', path: '/integrity', icon: ShieldCheck, alert: isTampered },
     { name: 'Reports', path: '/reports', icon: FileText },
   ];

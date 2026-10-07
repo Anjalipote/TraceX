@@ -42,6 +42,7 @@ export interface EvidenceItem {
   baselineSha256?: string;
   pdfDiffData?: any;
   source?: string;
+  notes?: string;
 }
 
 export interface TimelineEventItem {
@@ -319,18 +320,26 @@ export interface TargetComputer {
   name: string;
   os: string;
   status: string;
-  collectionMode: string;
-  collectionType: 'Live Agent' | 'Demo Collector';
-  lastSeen: string;
-  agentVersion: string;
-  isDemo: boolean;
+  collectionMode?: string;
+  collection_mode?: string;
+  collectionType?: string;
+  collection_type?: string;
+  lastSeen?: string;
+  last_seen?: string;
+  agentVersion?: string;
+  agent_version?: string;
+  isDemo?: boolean;
+  is_demo?: boolean;
+  isAdmin?: boolean;
+  is_admin?: boolean;
 }
 
 export interface InvestigationStage {
   id: string;
   name: string;
-  status: 'completed' | 'scanning' | 'queued';
-  artifactsCount: number;
+  status: 'completed' | 'scanning' | 'queued' | 'unavailable';
+  artifactsCount?: number;
+  artifacts_count?: number;
   description: string;
 }
 
@@ -341,22 +350,35 @@ export interface CorrelatedInvestigationFinding {
   timestamp: string;
   severity: 'High' | 'Medium' | 'Low' | 'Critical';
   category: string;
-  whySuspicious: string;
-  relatedEvents: string[];
-  metadata: {
+  whySuspicious?: string;
+  why_suspicious?: string;
+  relatedEvents?: string[];
+  related_events?: string[];
+  is_live_agent?: boolean;
+  metadata?: {
     user?: string;
     fileName?: string;
+    file_name?: string;
     filePath?: string;
+    file_path?: string;
     action?: string;
     process?: string;
     sha256?: string;
+    baseline_sha256?: string;
     integrityStatus?: string;
+    integrity_status?: string;
     deviceName?: string;
+    device_name?: string;
     serialNumber?: string;
+    serial_number?: string;
     mountPoint?: string;
+    mount_point?: string;
     sizeBytes?: number;
+    pdf_diff_available?: boolean;
+    diff_data?: any;
     [key: string]: any;
   };
 }
+
 
 

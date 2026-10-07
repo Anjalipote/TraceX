@@ -425,6 +425,453 @@ class TraceXAgent:
             observer.stop()
         observer.join()
 
+    def is_admin(self) -> bool:
+        """Determines whether current execution has Administrator elevation."""
+        try:
+            import ctypes
+            return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        except Exception:
+            return False
+
+    def collect_usb_history(self) -> Dict[str, Any]:
+        """Reads historical USB removable storage artifacts from HKLM\\...\\USBSTOR."""
+        if platform.system() != "Windows":
+            return {"status": "unavailable", "reason": "USBSTOR registry is Windows-specific.", "devices": []}
+        devices = []
+        try:
+            import winreg
+            base_key_path = r"SYSTEM\CurrentControlSet\Enum\USBSTOR"
+            try:
+                usbstor_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base_key_path)
+            except FileNotFoundError:
+                return {"status": "available", "reason": "No USBSTOR key found.", "devices": []}
+
+            num_subkeys = winreg.QueryInfoKey(usbstor_key)[0]
+            for i in range(num_subkeys):
+                device_type = winreg.EnumKey(usbstor_key, i)
+                dev_key = winreg.OpenKey(usbstor_key, device_type)
+                num_instances = winreg.QueryInfoKey(dev_key)[0]
+                for j in range(num_instances):
+                    instance_id = winreg.EnumKey(dev_key, j)
+                    inst_key = winreg.OpenKey(dev_key, instance_id)
+                    values = {}
+                    num_values = winreg.QueryInfoKey(inst_key)[1]
+                    for k in range(num_values):
+                        v_name, v_data, _ = winreg.EnumValue(inst_key, k)
+                        values[v_name] = v_data
+                    friendly_name = values.get("FriendlyName", values.get("DeviceDesc", device_type))
+                    hardware_id = values.get("HardwareID", [])
+                    if isinstance(hardware_id, list):
+                        hardware_id = hardware_id[0] if hardware_id else "N/A"
+                    devices.append({
+                        "device_type": device_type,
+                        "serial_number": instance_id,
+                        "friendly_name": friendly_name,
+                        "hardware_id": hardware_id,
+                        "registry_path": f"HKLM\\{base_key_path}\\{device_type}\\{instance_id}"
+                    })
+                    winreg.CloseKey(inst_key)
+                winreg.CloseKey(dev_key)
+            winreg.CloseKey(usbstor_key)
+            return {"status": "available", "count": len(devices), "devices": devices}
+        except Exception as e:
+            return {"status": "error", "reason": f"Failed reading USBSTOR: {str(e)}", "devices": []}
+
+    def read_file_usn_data(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Reads per-file USN metadata using 'fsutil usn readData'.
+        Succeeds under standard user permissions without administrator elevation.
+        """
+        if platform.system() != "Windows" or not os.path.isfile(file_path):
+            return None
+        import subprocess
+        try:
+            res = subprocess.run(
+                ["fsutil", "usn", "readData", file_path],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if res.returncode == 0:
+                data: Dict[str, str] = {}
+                for line in res.stdout.splitlines():
+                    if ":" in line:
+                        k, v = line.split(":", 1)
+                        data[k.strip().replace("#", "").replace(" ", "_").lower()] = v.strip()
+                return {
+                    "major_version": data.get("major_version"),
+                    "file_ref": data.get("fileref"),
+                    "parent_file_ref": data.get("parent_fileref"),
+                    "usn": data.get("usn"),
+                    "reason": data.get("reason"),
+                    "file_attributes": data.get("file_attributes"),
+                    "file_name": data.get("filename") or os.path.basename(file_path)
+                }
+        except Exception:
+            pass
+        return None
+
+    def collect_usn_journal(self, volume: str = "C:") -> Dict[str, Any]:
+        """
+        Inspects NTFS USN Change Journal, cleanly handling elevation limitations.
+        When elevated, parses CSV records (created, modified, deleted, renamed, reason, file reference).
+        """
+        if platform.system() != "Windows":
+            return {
+                "status": "unavailable",
+                "reason": "Historical record unavailable: NTFS USN Journal is Windows-specific.",
+                "records": []
+            }
+        import subprocess
+        try:
+            res = subprocess.run(["fsutil", "usn", "queryjournal", volume], capture_output=True, text=True, timeout=5)
+            if res.returncode != 0:
+                return {
+                    "status": "unavailable",
+                    "reason": f"Historical record unavailable: USN query failed ({res.stderr.strip() or 'Volume may not be NTFS'}).",
+                    "records": []
+                }
+            
+            journal_output = res.stdout
+            journal_metadata = {}
+            for line in journal_output.splitlines():
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    journal_metadata[k.strip().replace(" ", "_").lower()] = v.strip()
+
+            if not self.is_admin():
+                return {
+                    "status": "unavailable",
+                    "reason": "Historical record unavailable: Reading raw NTFS USN Journal records requires Windows Administrator elevation (Error 5: Access is denied). Running under standard user privileges.",
+                    "journal_metadata": journal_metadata,
+                    "records_count": 0,
+                    "records": []
+                }
+            
+            read_res = subprocess.run(["fsutil", "usn", "readjournal", volume, "csv"], capture_output=True, text=True, timeout=10)
+            if read_res.returncode == 0:
+                records = []
+                lines = [l.strip() for l in read_res.stdout.splitlines() if l.strip()]
+                for line in lines:
+                    parts = [p.strip() for p in line.split(",")]
+                    if len(parts) >= 6 and not parts[0].lower().startswith("usn"):
+                        usn_val = parts[0]
+                        file_ref = parts[1]
+                        parent_ref = parts[2]
+                        reason_code = parts[3]
+                        reason_name = parts[4] if len(parts) > 4 else ""
+                        ts = parts[5] if len(parts) > 5 else ""
+                        fname = parts[-1] if len(parts) > 6 else ""
+
+                        r_upper = reason_name.upper()
+                        evt_type = "FILE_MODIFIED"
+                        if "CREATE" in r_upper:
+                            evt_type = "FILE_CREATED"
+                        elif "DELETE" in r_upper:
+                            evt_type = "FILE_DELETED"
+                        elif "RENAME" in r_upper:
+                            evt_type = "FILE_RENAMED"
+
+                        records.append({
+                            "usn": usn_val,
+                            "file_ref": file_ref,
+                            "parent_file_ref": parent_ref,
+                            "reason_code": reason_code,
+                            "change_reason": reason_name or "DATA_MODIFIED",
+                            "timestamp": ts,
+                            "file_name": fname,
+                            "volume": volume,
+                            "event_type": evt_type,
+                            "source": "NTFS USN Change Journal"
+                        })
+
+                return {
+                    "status": "available",
+                    "records_count": len(records),
+                    "records": records[:100],
+                    "journal_metadata": journal_metadata
+                }
+            else:
+                return {
+                    "status": "unavailable",
+                    "reason": f"Historical record unavailable: Reading USN stream failed ({read_res.stderr.strip()}).",
+                    "records": []
+                }
+        except Exception as e:
+            return {"status": "unavailable", "reason": f"Historical record unavailable: fsutil error ({str(e)}).", "records": []}
+
+    def collect_event_logs(self, hours: int = 24) -> Dict[str, Any]:
+        """Queries Windows System, Kernel-PnP, and Security logs via wevtutil."""
+        if platform.system() != "Windows":
+            return {"status": "unavailable", "reason": "Historical record unavailable: Windows Event Log is Windows-specific.", "events": []}
+        import subprocess
+        events = []
+        status_info = {"pnp_log": "available", "system_log": "available", "security_log": "unknown"}
+
+        # 1. Kernel-PnP Logs (Device Configured / Started / Deleted)
+        try:
+            pnp_res = subprocess.run(["wevtutil", "qe", "Microsoft-Windows-Kernel-PnP/Configuration", "/c:30", "/rd:true", "/f:text"], capture_output=True, text=True, timeout=10)
+            if pnp_res.returncode == 0:
+                raw_events = pnp_res.stdout.split("Event[")
+                for raw in raw_events:
+                    if not raw.strip():
+                        continue
+                    event_dict = {}
+                    desc_lines = []
+                    in_desc = False
+                    for line in raw.splitlines():
+                        if in_desc:
+                            desc_lines.append(line.strip())
+                        elif line.strip().startswith("Description:"):
+                            in_desc = True
+                            desc_lines.append(line.replace("Description:", "").strip())
+                        elif ":" in line:
+                            k, v = line.split(":", 1)
+                            event_dict[k.strip()] = v.strip()
+                    
+                    eid = event_dict.get("Event ID", "")
+                    if eid in ["400", "410", "420", "430"]:
+                        action_name = "Device Configured" if eid == "400" else "Device Started" if eid == "410" else "Device Deleted" if eid == "420" else "Device PnP Event"
+                        events.append({
+                            "log": "Kernel-PnP",
+                            "event_id": eid,
+                            "source": "Windows Event Log (Kernel-PnP)",
+                            "timestamp": event_dict.get("Date", ""),
+                            "user": event_dict.get("User Name", "SYSTEM"),
+                            "action": action_name,
+                            "description": f"{action_name}: {' '.join(desc_lines)[:250]}"
+                        })
+        except Exception:
+            pass
+
+        # 2. System Log
+        try:
+            res = subprocess.run(["wevtutil", "qe", "System", "/c:30", "/rd:true", "/f:text"], capture_output=True, text=True, timeout=10)
+            if res.returncode == 0:
+                raw_events = res.stdout.split("Event[")
+                for raw in raw_events:
+                    if not raw.strip():
+                        continue
+                    event_dict = {}
+                    for line in raw.splitlines():
+                        if ":" in line:
+                            k, v = line.split(":", 1)
+                            event_dict[k.strip()] = v.strip()
+                    if "Date" in event_dict or "Event ID" in event_dict:
+                        events.append({
+                            "log": "System",
+                            "event_id": event_dict.get("Event ID", "N/A"),
+                            "source": f"Windows Event Log (System - {event_dict.get('Source', 'System')})",
+                            "timestamp": event_dict.get("Date", ""),
+                            "user": event_dict.get("User Name", "SYSTEM"),
+                            "action": "System Event",
+                            "description": event_dict.get("Description", "")[:200]
+                        })
+        except Exception:
+            pass
+
+        # 3. Security Log
+        try:
+            sec_res = subprocess.run(["wevtutil", "qe", "Security", "/c:15", "/rd:true", "/f:text"], capture_output=True, text=True, timeout=10)
+            if sec_res.returncode == 0 and sec_res.stdout.strip():
+                status_info["security_log"] = "available"
+            else:
+                status_info["security_log"] = "Historical record unavailable: Windows Security Event Log requires Administrator elevation or Object Access Auditing policy enabled."
+        except Exception:
+            status_info["security_log"] = "Historical record unavailable"
+
+        return {
+            "status": "available" if events else "unavailable",
+            "events_count": len(events),
+            "events": events,
+            "channel_status": status_info
+        }
+
+    def discover_candidate_files(self, search_paths: List[str], hours: int = 24, extensions: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Discovers candidate files modified/accessed within time window without requiring pre-known filenames."""
+        cutoff_time = time.time() - (hours * 3600)
+        candidates = []
+        ext_lower = [e.lower() for e in extensions] if extensions else None
+
+        for sp in search_paths:
+            abs_sp = os.path.abspath(sp)
+            if not os.path.exists(abs_sp):
+                continue
+            for root, _, files in os.walk(abs_sp):
+                if any(ignored in root for ignored in [".git", "node_modules", ".tracex_baseline", "__pycache__"]):
+                    continue
+                for file in files:
+                    full_p = os.path.join(root, file)
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext_lower and ext not in ext_lower:
+                        continue
+                    try:
+                        stat = os.stat(full_p)
+                    except Exception:
+                        continue
+                    is_within = (stat.st_mtime >= cutoff_time) or (stat.st_ctime >= cutoff_time)
+                    b_info = self.baseline_manifest.get(full_p)
+                    b_sha = b_info.get("sha256") if b_info else None
+                    sha256 = None
+                    is_diverged = False
+                    pdf_diff = None
+
+                    if b_sha:
+                        sha256 = self.calculate_file_hash(full_p)
+                        if sha256 and sha256 != b_sha:
+                            is_diverged = True
+                            is_within = True
+                            if ext == ".pdf":
+                                cached = os.path.join(self.baseline_dir, f"base_{file}")
+                                if os.path.exists(cached):
+                                    pdf_diff = self.compare_pdf_content(cached, full_p)
+
+                    if not is_within:
+                        continue
+
+                    if not sha256:
+                        sha256 = self.calculate_file_hash(full_p)
+
+                    mtime_dt = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+                    ctime_dt = datetime.fromtimestamp(stat.st_ctime, tz=timezone.utc).isoformat()
+                    atime_dt = datetime.fromtimestamp(stat.st_atime, tz=timezone.utc).isoformat()
+                    usn_meta = self.read_file_usn_data(full_p)
+
+                    candidates.append({
+                        "file_name": file,
+                        "file_path": full_p,
+                        "file_size": stat.st_size,
+                        "extension": ext,
+                        "sha256": sha256,
+                        "baseline_sha256": b_sha,
+                        "is_baseline_diverged": is_diverged,
+                        "mtime": mtime_dt,
+                        "ctime": ctime_dt,
+                        "atime": atime_dt,
+                        "usn_data": usn_meta,
+                        "source": "NTFS File Metadata Scan",
+                        "pdf_diff": pdf_diff
+                    })
+
+        candidates.sort(key=lambda x: x.get("mtime", ""), reverse=True)
+        return candidates
+
+    def run_historical_collection(self, hours: int = 24, case_id: Optional[str] = None) -> Dict[str, Any]:
+        """Runs full historical artifact collection and transmits normalized events to backend."""
+        cid = case_id or self.case_id
+        print(f"[TraceX Agent] Running Historical Forensic Collection for Case: {cid} (Window: {hours}h)")
+        self.register()
+
+        # 1. Candidate Files
+        print("  -> Scanning candidate files...")
+        candidate_files = self.discover_candidate_files(self.monitored_paths, hours=hours)
+        print(f"     Discovered {len(candidate_files)} candidate files.")
+
+        # 2. USB Registry
+        print("  -> Querying USBSTOR registry...")
+        usb_result = self.collect_usb_history()
+        print(f"     Found {len(usb_result.get('devices', []))} historical USB storage devices.")
+
+        # 3. Event Logs
+        print("  -> Querying Windows event logs...")
+        event_result = self.collect_event_logs(hours=hours)
+        print(f"     Collected {event_result.get('events_count', 0)} system event records.")
+
+        # 4. USN Journal
+        print("  -> Inspecting NTFS USN Change Journal...")
+        usn_result = self.collect_usn_journal()
+        if usn_result.get("status") == "unavailable":
+            print(f"     [Note] {usn_result.get('reason')}")
+        else:
+            print(f"     Retrieved {usn_result.get('records_count', 0)} USN records.")
+
+        # Build Normalized Events
+        events_to_send = []
+        now_dt = datetime.now(timezone.utc).isoformat()
+
+        for cf in candidate_files:
+            events_to_send.append({
+                "timestamp": cf.get("mtime") or now_dt,
+                "event_type": "FILE_MODIFIED" if cf.get("is_baseline_diverged") else "FILE_ACCESSED",
+                "category": "File System",
+                "severity": "High" if cf.get("is_baseline_diverged") else "Low",
+                "computer_id": self.hostname,
+                "user": self.user,
+                "file_name": cf["file_name"],
+                "file_path": cf["file_path"],
+                "file_size": cf["file_size"],
+                "sha256_hash": cf["sha256"],
+                "baseline_sha256": cf.get("baseline_sha256"),
+                "source": "NTFS Metadata Scan",
+                "details": {
+                    "mtime": cf.get("mtime"),
+                    "ctime": cf.get("ctime"),
+                    "diff_data": json.dumps(cf.get("pdf_diff")) if cf.get("pdf_diff") else None
+                }
+            })
+
+        for u in usb_result.get("devices", []):
+            events_to_send.append({
+                "timestamp": now_dt,
+                "event_type": "USB_CONNECTED",
+                "category": "USB / Removable Storage",
+                "severity": "Medium",
+                "computer_id": self.hostname,
+                "user": self.user,
+                "device_name": u.get("friendly_name"),
+                "device_serial": u.get("serial_number"),
+                "source": "HKLM\\SYSTEM\\CurrentControlSet\\Enum\\USBSTOR",
+                "details": u
+            })
+
+        for el in event_result.get("events", [])[:15]:
+            events_to_send.append({
+                "timestamp": now_dt,
+                "event_type": "SYSTEM_EVENT",
+                "category": "System Log",
+                "severity": "Low",
+                "computer_id": self.hostname,
+                "user": el.get("user", "SYSTEM"),
+                "source": f"Event ID {el.get('event_id')}",
+                "details": el
+            })
+
+        # 4. Ingest USN journal records if present
+        for rec in usn_result.get("records", [])[:30]:
+            events_to_send.append({
+                "timestamp": rec.get("timestamp") or now_dt,
+                "event_type": rec.get("event_type", "FILE_MODIFIED"),
+                "category": "File System",
+                "severity": "High" if "DELETE" in rec.get("event_type", "") or "RENAME" in rec.get("event_type", "") else "Medium",
+                "computer_id": self.hostname,
+                "user": self.user,
+                "file_name": rec.get("file_name", "Unknown"),
+                "file_path": f"{rec.get('volume', 'C:')}\\{rec.get('file_name', 'Unknown')}",
+                "source": "NTFS USN Change Journal",
+                "details": rec
+            })
+
+        # Send to Backend
+        if events_to_send:
+            print(f"  -> Transmitting {len(events_to_send)} normalized forensic events to TraceX API...")
+            res = self.send_http_request(f"/investigations/{cid}/events", events_to_send)
+            if res and res.get("success"):
+                print(f"     Successfully ingested {len(events_to_send)} events into backend.")
+            else:
+                print("     [Warning] Failed to transmit events to backend.")
+
+            print("  -> Triggering TraceX Correlation Engine...")
+            corr = self.send_http_request(f"/investigations/{cid}/correlate", {})
+            if corr:
+                print(f"     Correlation Complete: {corr.get('findings_generated', 0)} Findings, {corr.get('timeline_entries_generated', 0)} Timeline Events created.")
+
+        return {
+            "candidate_files": candidate_files,
+            "usb_devices": usb_result.get("devices", []),
+            "usn_journal": usn_result,
+            "event_logs": event_result
+        }
+
 
 class AgentEventHandler(FileSystemEventHandler):
     def __init__(self, agent: TraceXAgent):
@@ -463,17 +910,23 @@ class AgentEventHandler(FileSystemEventHandler):
 
 def main():
     parser = argparse.ArgumentParser(description="TraceX Windows Endpoint Collection Agent")
-    parser.add_argument("command", choices=["start", "status", "simulate-pdf"], help="Agent command")
+    parser.add_argument("command", choices=["start", "collect", "historical", "status", "simulate-pdf"], help="Agent command")
     parser.add_argument("--config", default="config.json", help="Path to config.json")
-    parser.add_argument("--dir", default=None, help="Directory to monitor")
+    parser.add_argument("--dir", default=None, help="Directory to monitor/scan")
+    parser.add_argument("--hours", type=int, default=24, help="Historical time window in hours")
+    parser.add_argument("--case-id", default=None, help="Case ID to assign collection to")
     args = parser.parse_args()
 
     agent = TraceXAgent(config_path=args.config)
     if args.dir:
         agent.monitored_paths = [args.dir]
+    if args.case_id:
+        agent.case_id = args.case_id
 
     if args.command == "start":
         agent.start()
+    elif args.command in ["collect", "historical"]:
+        agent.run_historical_collection(hours=args.hours, case_id=args.case_id)
     elif args.command == "status":
         res = agent.send_http_request("/agent/status", {})
         if res:
@@ -482,7 +935,6 @@ def main():
             print(f"Could not connect to TraceX backend at {agent.backend_url}.")
     elif args.command == "simulate-pdf":
         print("[TraceX Simulation] Running PDF baseline and modification test...")
-        # We will run the simulation test
         from test_agent_workflow import run_test_workflow
         run_test_workflow()
 

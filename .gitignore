@@ -24,6 +24,7 @@ __pycache__/
 backend/uploads/
 uploads/
 !backend/uploads/.gitkeep
+agent/.tracex_baseline/
 
 # Node / Vite Frontend
 node_modules/

@@ -1138,7 +1138,10 @@ export const api = {
   async startInvestigationScan(params: {
     computer_id: string;
     case_id?: string;
+    investigation_mode?: 'historical' | 'live';
     collection_type?: string;
+    hours?: number;
+    scan_paths?: string[];
   }): Promise<any> {
     try {
       const res = await fetch(`${API_BASE_URL}/investigations/scan`, {
@@ -1160,6 +1163,7 @@ export const api = {
       case_id: params.case_id || 'TRX-001',
       computer_id: params.computer_id,
       status: 'Completed',
+      investigation_mode: params.investigation_mode || 'historical',
       collection_type: params.collection_type === 'demo' ? 'Demo Collector' : 'Live Agent',
       artifacts_collected: 149,
       elapsed_seconds: 84,

@@ -35,6 +35,10 @@ class EvidenceResponse(EvidenceBase):
     file_modified_at: Optional[datetime] = None
     file_accessed_at: Optional[datetime] = None
     uploaded_at: datetime
+    storage_path: Optional[str] = None
+    is_live_agent: Optional[bool] = False
+    baseline_sha256: Optional[str] = None
+    pdf_diff_data: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

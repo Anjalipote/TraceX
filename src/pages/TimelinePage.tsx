@@ -15,6 +15,7 @@ import {
 import { EvidenceDetailModal } from '../components/evidence/EvidenceDetailModal';
 import { CorrelatedInvestigationFinding } from '../types';
 import { useApp } from '../context/AppContext';
+import { api } from '../services/api';
 
 interface TimelineEventData {
   id: string;
@@ -162,6 +163,64 @@ export const TimelinePage: React.FC = () => {
     }
   ];
 
+  const [dbTimelineEvents, setDbTimelineEvents] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    api.getTimeline().then((res: any) => {
+      if (isMounted && res && Array.isArray(res)) {
+        setDbTimelineEvents(res);
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
+
+  const parsedDbEvents: TimelineEventData[] = dbTimelineEvents.map(e => {
+    const dt = new Date(e.timestamp);
+    const timeStr = !isNaN(dt.getTime()) ? dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Recorded';
+    const dateStr = !isNaN(dt.getTime()) ? dt.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : 'Today';
+    const catLower = (e.event_type || e.category || '').toLowerCase();
+    const cat = catLower.includes('usb') ? 'usb' : catLower.includes('file') ? 'file' : catLower.includes('user') ? 'user' : 'file';
+
+    let eventType = e.event_type ? e.event_type.toUpperCase() : 'EVENT';
+    let filePath = '';
+    let extractedSource = e.source || 'Endpoint Forensic Agent';
+
+    // Parse multiline format if present:
+    // FILE MODIFIED\nFile: ...\nTime: ...\nSource: ...\nEvent: ...
+    if (typeof e.description === 'string' && e.description.includes('\n')) {
+      const lines = e.description.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('File:')) filePath = line.replace('File:', '').trim();
+        if (line.startsWith('Source:')) extractedSource = line.replace('Source:', '').trim();
+        if (line.startsWith('Event:')) eventType = line.replace('Event:', '').trim();
+      }
+    }
+
+    const isHistorical = extractedSource.includes('USN') || extractedSource.includes('Metadata') || extractedSource.includes('USBSTOR') || extractedSource.includes('Event Log');
+
+    return {
+      id: e.id,
+      time: timeStr,
+      date: dateStr,
+      title: eventType.replace('_', ' ').title ? eventType.replace('_', ' ') : e.description.split('\n')[0],
+      category: cat as any,
+      description: e.description,
+      path: filePath || (e.details?.file_path) || `Host: Real Telemetry (${e.actor || 'SYSTEM'})`,
+      isSuspicious: e.is_suspicious || false,
+      isLiveAgent: e.is_live_agent || false,
+      source: extractedSource,
+      metadata: {
+        user: e.actor || 'SYSTEM',
+        action: eventType,
+        process: extractedSource,
+        filePath: filePath,
+        whySuspicious: e.is_suspicious ? `Flagged: Correlated forensic artifact from ${extractedSource}.` : 'Routine forensic record.',
+        relatedEvents: []
+      }
+    };
+  });
+
   const liveEvents: TimelineEventData[] = (appTimeline || [])
     .filter(e => e.isLiveAgent || e.sourceArtifact === 'LIVE AGENT')
     .map(e => {
@@ -181,7 +240,7 @@ export const TimelinePage: React.FC = () => {
         path: `Endpoint Host: Real Windows Telemetry (${e.actor || 'SYSTEM'})`,
         isSuspicious: e.isSuspicious,
         isLiveAgent: true,
-        source: 'LIVE AGENT',
+        source: e.sourceArtifact || 'LIVE AGENT',
         metadata: {
           user: e.actor || 'LIVE_USER',
           action: e.title,
@@ -192,10 +251,21 @@ export const TimelinePage: React.FC = () => {
       };
     });
 
-  const allEvents = [...liveEvents, ...events];
+  // Combine database events, live app events, and baseline events (avoiding ID duplicates)
+  const seenIds = new Set<string>();
+  const allEvents: TimelineEventData[] = [];
+
+  for (const ev of [...parsedDbEvents, ...liveEvents, ...events]) {
+    if (!seenIds.has(ev.id)) {
+      seenIds.add(ev.id);
+      allEvents.push(ev);
+    }
+  }
 
   const filteredEvents = allEvents.filter((e) => {
     if (activeFilter === 'LIVE' && !e.isLiveAgent) return false;
+    if (activeFilter === 'HISTORICAL' && !(e.source && (e.source.includes('USN') || e.source.includes('Metadata') || e.source.includes('USBSTOR') || e.source.includes('Event Log')))) return false;
+    if (activeFilter === 'DEMO' && e.isLiveAgent) return false;
     if (activeFilter === 'SUSPICIOUS' && !e.isSuspicious) return false;
     if (activeFilter === 'FILES' && e.category !== 'file' && e.category !== 'transfer') return false;
     if (activeFilter === 'USB' && e.category !== 'usb') return false;
@@ -206,7 +276,8 @@ export const TimelinePage: React.FC = () => {
       return (
         e.title.toLowerCase().includes(q) ||
         e.description.toLowerCase().includes(q) ||
-        (e.path && e.path.toLowerCase().includes(q))
+        (e.path && e.path.toLowerCase().includes(q)) ||
+        (e.source && e.source.toLowerCase().includes(q))
       );
     }
     return true;
@@ -237,7 +308,7 @@ export const TimelinePage: React.FC = () => {
             Investigation Timeline
           </h1>
           <p className="text-xs text-[#64748B] mt-0.5">
-            Chronological view of all relevant events across live endpoints and investigation benchmarks.
+            Chronological forensic audit trail across NTFS USN Journal, Windows Event Logs, and Live Monitoring.
           </p>
         </div>
 
@@ -245,10 +316,11 @@ export const TimelinePage: React.FC = () => {
         <div className="flex items-center gap-1.5 p-1 bg-white rounded-xl border border-[#E2E8F0] shadow-xs flex-wrap">
           {[
             { id: 'ALL', label: 'All' },
+            { id: 'HISTORICAL', label: '📜 Historical Scan' },
             { id: 'LIVE', label: '🟢 Live Agent' },
-            { id: 'FILES', label: 'File Activity' },
-            { id: 'USB', label: 'USB Devices' },
-            { id: 'USER', label: 'User' },
+            { id: 'DEMO', label: '🔵 Demo Data' },
+            { id: 'FILES', label: 'Files' },
+            { id: 'USB', label: 'USB' },
             { id: 'SUSPICIOUS', label: 'Suspicious' }
           ].map((tab) => (
             <button
@@ -266,84 +338,122 @@ export const TimelinePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Chronological Event Cards List matching reference UI Panel 5 */}
+      {/* Chronological Event Cards List */}
       <div className="space-y-3 relative">
-        {filteredEvents.map((evt) => (
-          <div
-            key={evt.id}
-            onClick={() => handleEventClick(evt)}
-            className="bg-white rounded-2xl border border-[#E2E8F0] p-4.5 hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
-          >
-            {/* Left: Time & Icon & Details */}
-            <div className="flex items-center gap-4 min-w-0">
-              {/* Time Block */}
-              <div className="text-left shrink-0 w-20">
-                <p className="font-mono text-xs font-bold text-[#1E293B]">
-                  {evt.time}
-                </p>
-                <p className="text-[10px] text-[#94A3B8] font-medium">
-                  {evt.date}
-                </p>
-              </div>
-
-              {/* Icon Circle */}
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                evt.category === 'user'
-                  ? 'bg-blue-50 text-blue-600'
-                  : evt.category === 'file'
-                  ? 'bg-red-50 text-red-600'
-                  : evt.category === 'usb'
-                  ? 'bg-amber-50 text-amber-600'
-                  : 'bg-indigo-50 text-indigo-600'
-              }`}>
-                {evt.category === 'user' ? (
-                  <UserCheck className="w-5 h-5" />
-                ) : evt.category === 'file' ? (
-                  <FileText className="w-5 h-5" />
-                ) : evt.category === 'usb' ? (
-                  <HardDrive className="w-5 h-5" />
-                ) : (
-                  <Upload className="w-5 h-5" />
-                )}
-              </div>
-
-              {/* Text Information */}
-              <div className="min-w-0">
-                <h3 className="text-xs font-bold text-[#1E293B] group-hover:text-indigo-600 transition-colors">
-                  {evt.title}
-                </h3>
-                <p className="text-xs text-[#64748B] truncate mt-0.5">
-                  {evt.description}
-                </p>
-                {evt.path && (
-                  <p className="text-[11px] font-mono text-[#94A3B8] truncate mt-0.5">
-                    {evt.path}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Right: Badge & Chevron */}
-            <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
-              {evt.isLiveAgent ? (
-                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  LIVE AGENT
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
-                  DEMO DATA
-                </span>
-              )}
-              {evt.isSuspicious && (
-                <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
-                  Suspicious
-                </span>
-              )}
-              <ChevronRight className="w-4 h-4 text-[#94A3B8] group-hover:text-indigo-600 transition-transform group-hover:translate-x-0.5" />
-            </div>
+        {filteredEvents.length === 0 ? (
+          <div className="p-12 text-center bg-white rounded-2xl border border-[#E2E8F0] shadow-xs space-y-2">
+            <Clock className="w-8 h-8 text-[#94A3B8] mx-auto opacity-60" />
+            <h3 className="text-sm font-bold text-[#1E293B]">Historical record unavailable for current filter</h3>
+            <p className="text-xs text-[#64748B] max-w-md mx-auto">
+              Artifact may have rotated or require administrator elevation for raw volume extraction. Execute a historical scan in Forensic Investigation to ingest records.
+            </p>
           </div>
-        ))}
+        ) : (
+          filteredEvents.map((evt) => {
+            const isHistoricalSource = evt.source && (evt.source.includes('USN') || evt.source.includes('Metadata') || evt.source.includes('USBSTOR') || evt.source.includes('Event Log'));
+
+            return (
+              <div
+                key={evt.id}
+                onClick={() => handleEventClick(evt)}
+                className="bg-white rounded-2xl border border-[#E2E8F0] p-4.5 hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-start justify-between gap-4 group"
+              >
+                {/* Left: Time & Icon & Details */}
+                <div className="flex items-start gap-4 min-w-0 flex-1">
+                  {/* Time Block */}
+                  <div className="text-left shrink-0 w-20 pt-1">
+                    <p className="font-mono text-xs font-bold text-[#1E293B]">
+                      {evt.time}
+                    </p>
+                    <p className="text-[10px] text-[#94A3B8] font-medium">
+                      {evt.date}
+                    </p>
+                  </div>
+
+                  {/* Icon Circle */}
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                    evt.category === 'user'
+                      ? 'bg-blue-50 text-blue-600'
+                      : evt.category === 'file'
+                      ? 'bg-red-50 text-red-600'
+                      : evt.category === 'usb'
+                      ? 'bg-amber-50 text-amber-600'
+                      : 'bg-indigo-50 text-indigo-600'
+                  }`}>
+                    {evt.category === 'user' ? (
+                      <UserCheck className="w-5 h-5" />
+                    ) : evt.category === 'file' ? (
+                      <FileText className="w-5 h-5" />
+                    ) : evt.category === 'usb' ? (
+                      <HardDrive className="w-5 h-5" />
+                    ) : (
+                      <Upload className="w-5 h-5" />
+                    )}
+                  </div>
+
+                  {/* Text Information & Structured Source Block */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-xs font-bold text-[#1E293B] group-hover:text-indigo-600 transition-colors uppercase">
+                        {evt.title}
+                      </h3>
+                      {evt.source && (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          Source: {evt.source}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Pre-formatted Structured Forensic Record Display */}
+                    <div className="mt-2 p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-[11px] text-[#334155] space-y-0.5 leading-relaxed">
+                      {evt.description.split('\n').map((line, lIdx) => (
+                        <div key={lIdx} className="truncate">
+                          {line.startsWith('File:') ? (
+                            <span><strong className="text-[#64748B]">File: </strong><span className="text-[#0F172A]">{line.replace('File:', '').trim()}</span></span>
+                          ) : line.startsWith('Source:') ? (
+                            <span><strong className="text-[#64748B]">Source: </strong><span className="text-indigo-600 font-semibold">{line.replace('Source:', '').trim()}</span></span>
+                          ) : line.startsWith('Event:') ? (
+                            <span><strong className="text-[#64748B]">Event: </strong><span className="text-emerald-700 font-semibold">{line.replace('Event:', '').trim()}</span></span>
+                          ) : line.startsWith('Time:') ? (
+                            <span><strong className="text-[#64748B]">Time: </strong><span className="text-[#475569]">{line.replace('Time:', '').trim()}</span></span>
+                          ) : (
+                            <span>{line}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {evt.path && !evt.description.includes(evt.path) && (
+                      <p className="text-[11px] font-mono text-[#94A3B8] truncate mt-1">
+                        Path: {evt.path}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: Mode Badge & Chevron */}
+                <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-start pt-1">
+                  {evt.isLiveAgent ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      {isHistoricalSource ? 'HISTORICAL SCAN' : 'LIVE AGENT'}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-mono font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                      DEMO DATA
+                    </span>
+                  )}
+                  {evt.isSuspicious && (
+                    <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
+                      Suspicious
+                    </span>
+                  )}
+                  <ChevronRight className="w-4 h-4 text-[#94A3B8] group-hover:text-indigo-600 transition-transform group-hover:translate-x-0.5 mt-0.5" />
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Evidence Detail Modal */}
