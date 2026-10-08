@@ -173,10 +173,13 @@ class FindingService:
         # USB finding (only if USB activity was actually logged)
         if has_usb:
             usb_ev = next((e for e in events if e.event_type == "usb" or "usb" in e.description.lower()), None)
+            usb_evidence_id = (usb_ev.evidence_id if (usb_ev and usb_ev.evidence_id) else
+                               next((e.id for e in evidence_items if "usb" in e.filename.lower() or e.category == "Hardware"), None) or
+                               (evidence_items[0].id if evidence_items else None))
             findings.append(Finding(
                 id=f"find-usb-{uuid.uuid4().hex[:8]}",
                 case_id=case_id,
-                evidence_id="ev-007" if any(e.id == "ev-007" for e in evidence_items) else (evidence_items[0].id if evidence_items else None),
+                evidence_id=usb_evidence_id,
                 title="External Removable Storage Device Activity Detected",
                 description="An unapproved removable flash drive was mounted to the primary workstation USB port.",
                 severity="High",
@@ -199,12 +202,22 @@ class FindingService:
                 related_timeline_event_ids=json.dumps([usb_ev.id] if usb_ev else [])
             ))
 
+        # Identify sensitive document artifact if present
+        sensitive_ev = next((e for e in evidence_items if "confidential" in e.filename.lower() or "classified" in e.filename.lower()), None)
+        if not sensitive_ev:
+            sensitive_ev = next((e for e in evidence_items if e.file_type in ["document", "pdf"] or e.filename.endswith((".pdf", ".docx", ".xlsx", ".txt"))), None)
+        if not sensitive_ev and evidence_items:
+            sensitive_ev = evidence_items[0]
+
+        target_file_label = sensitive_ev.filename if sensitive_ev else "Investigated File"
+        target_ev_id = sensitive_ev.id if sensitive_ev else None
+
         # Sensitive document access correlated with USB
         if has_usb and has_confidential_read:
             findings.append(Finding(
                 id=f"find-doc-{uuid.uuid4().hex[:8]}",
                 case_id=case_id,
-                evidence_id="ev-001" if any(e.id == "ev-001" for e in evidence_items) else (evidence_items[0].id if evidence_items else None),
+                evidence_id=target_ev_id,
                 title="Classified Document Read Access Correlated with Physical Media",
                 description="Direct read handles were opened on classified blueprint shortly after removable storage volume attachment.",
                 severity="Critical",
@@ -215,7 +228,7 @@ class FindingService:
                 status="Confirmed",
                 confidence="High",
                 confidence_reason="Correlated Security Event ID 4663 object access records align with USB mount timestamps.",
-                what_happened="Privileged handle opened for ReadData on sensitive document.",
+                what_happened=f"Privileged handle opened for ReadData on sensitive document '{target_file_label}'.",
                 why_detected="Audit trail captured object access request matching high-classification directory watchlists.",
                 why_suspicious="Handle was opened within 128 seconds of an unauthorized USB mass storage device being mounted.",
                 recommended_next_step="Inspect DLP access authorizations and interview workstation custodian.",
@@ -223,7 +236,7 @@ class FindingService:
                     "Target file is tagged with highest sensitivity classification",
                     "Access initiated shortly after physical media mount"
                 ]),
-                related_entities=json.dumps(["confidential.pdf"]),
+                related_entities=json.dumps([target_file_label]),
                 related_timeline_event_ids=json.dumps([])
             ))
 
@@ -232,7 +245,7 @@ class FindingService:
             findings.append(Finding(
                 id=f"find-copy-{uuid.uuid4().hex[:8]}",
                 case_id=case_id,
-                evidence_id="ev-001" if any(e.id == "ev-001" for e in evidence_items) else (evidence_items[0].id if evidence_items else None),
+                evidence_id=target_ev_id,
                 title="Classified File Duplication to Removable Destination",
                 description="NTFS journal transactions confirm byte-level duplicate creation on removable mount point.",
                 severity="Critical",
@@ -243,22 +256,25 @@ class FindingService:
                 status="Confirmed",
                 confidence="High",
                 confidence_reason="NTFS journal entry records replica written to removable volume.",
-                what_happened="Classified document was replicated from internal SSD to removable volume.",
+                what_happened=f"Document '{target_file_label}' was replicated from internal SSD to removable volume.",
                 why_detected="NTFS USN journal recorded destination write transaction.",
                 why_suspicious="Destination volume is an unencrypted removable flash drive.",
                 recommended_next_step="Perform block-level forensic acquisition of removable drive.",
                 supporting_factors=json.dumps(["Direct copy to external non-volatile destination"]),
-                related_entities=json.dumps(["confidential.pdf", "Removable Volume"]),
+                related_entities=json.dumps([target_file_label, "Removable Volume"]),
                 related_timeline_event_ids=json.dumps([])
             ))
 
         # Anti-forensics / wiper finding
         if has_wipe:
             wipe_ev = next((e for e in events if "delete" in e.description.lower() or "clear" in e.description.lower() or "1102" in (e.raw_log or "")), None)
+            log_evidence_id = (wipe_ev.evidence_id if (wipe_ev and wipe_ev.evidence_id) else
+                               next((e.id for e in evidence_items if "log" in e.filename.lower() or e.category == "Log"), None) or
+                               (evidence_items[0].id if evidence_items else None))
             findings.append(Finding(
                 id=f"find-wipe-{uuid.uuid4().hex[:8]}",
                 case_id=case_id,
-                evidence_id="ev-005" if any(e.id == "ev-005" for e in evidence_items) else (evidence_items[0].id if evidence_items else None),
+                evidence_id=log_evidence_id,
                 title="Mass File Unlinking & Audit Log Purge (Anti-Forensics)",
                 description="Automated deletion purged files across Document directories along with intentional clearing of Windows Security event log.",
                 severity="High",

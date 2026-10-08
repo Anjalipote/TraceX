@@ -226,9 +226,12 @@ async def upload_evidence(
 
 @router.get("/evidence/{evidence_id}", response_model=EvidenceResponse)
 def get_evidence(evidence_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    ev = db.query(Evidence).filter(Evidence.id == evidence_id).first()
+    try:
+        ev = db.query(Evidence).filter(Evidence.id == evidence_id).first()
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database query error: {str(e)}")
     if not ev:
-        raise HTTPException(status_code=404, detail="Evidence not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Evidence artifact '{evidence_id}' not found.")
     return ev
 
 @router.post("/evidence/{evidence_id}/verify", response_model=EvidenceVerifyResponse)
@@ -237,9 +240,12 @@ def verify_evidence_integrity(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["ADMIN", "INVESTIGATOR"]))
 ):
-    ev = db.query(Evidence).filter(Evidence.id == evidence_id).first()
+    try:
+        ev = db.query(Evidence).filter(Evidence.id == evidence_id).first()
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database query error: {str(e)}")
     if not ev:
-        raise HTTPException(status_code=404, detail="Evidence not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Evidence artifact '{evidence_id}' not found.")
 
     result = HashService.verify_integrity(ev.storage_path, ev.sha256_hash)
     ev.integrity_status = result["status"]

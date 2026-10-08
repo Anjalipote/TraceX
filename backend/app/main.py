@@ -15,26 +15,13 @@ from app.api import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure all tables are created
-    Base.metadata.create_all(bind=engine)
-    # Safe SQLite schema migration for added live agent columns
+    # Ensure all tables and required columns are verified and migrated
     try:
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            for table, col, col_def in [
-                ("evidence", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
-                ("evidence", "baseline_sha256", "VARCHAR(64)"),
-                ("evidence", "pdf_diff_data", "TEXT"),
-                ("timeline_events", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
-                ("findings", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
-            ]:
-                try:
-                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
-                    conn.commit()
-                except Exception:
-                    pass
-    except Exception:
-        pass
+        from app.core.migration import run_schema_migrations
+        run_schema_migrations(engine)
+    except Exception as e:
+        import logging
+        logging.getLogger("tracex.main").error(f"Lifespan schema migration error: {e}")
     yield
 
 OPENAPI_TAGS = [

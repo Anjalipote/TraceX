@@ -441,7 +441,7 @@ export const api = {
             isSuspicious: e.is_suspicious,
             severity: e.severity.toUpperCase() as any,
             sourceArtifact: e.source || (e.is_live_agent ? 'LIVE AGENT' : 'SYSTEM'),
-            evidenceId: e.evidence_id || 'ev-001',
+            evidenceId: e.evidence_id || undefined,
             actor: e.actor || 'SYSTEM',
             relatedFindings: e.is_suspicious ? ['find-001'] : [],
             rawLogSnippet: e.raw_log || e.description,
@@ -525,8 +525,8 @@ export const api = {
           severity: rf.severity.toUpperCase() as any,
           category: rf.category || 'Behavioral Anomaly',
           description: rf.description,
-          evidenceIds: ['ev-001'],
-          eventIds: ['evt-003'],
+          evidenceIds: rf.evidence_ids || (rf.evidence_id ? [rf.evidence_id] : []),
+          eventIds: rf.event_ids || (rf.event_id ? [rf.event_id] : []),
           mitreTactic: rf.mitre_technique || 'Defense Evasion',
           confidence: (rf.confidence || 'High') as any
         }));

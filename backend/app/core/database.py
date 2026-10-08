@@ -18,33 +18,14 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 def ensure_schema_columns():
+    """Delegates schema migration safely once models are loaded."""
     try:
-        from sqlalchemy import text
-        Base.metadata.create_all(bind=engine)
-        with engine.connect() as conn:
-            for table, col, col_def in [
-                ("evidence", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
-                ("evidence", "baseline_sha256", "VARCHAR(64)"),
-                ("evidence", "pdf_diff_data", "TEXT"),
-                ("timeline_events", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
-                ("findings", "is_live_agent", "BOOLEAN DEFAULT FALSE"),
-                ("forensic_events", "hardware_id", "VARCHAR(255)"),
-                ("cases", "is_real_investigation", "BOOLEAN DEFAULT FALSE"),
-                ("cases", "collection_type", "VARCHAR(32) DEFAULT 'demo'"),
-                ("cases", "computer_id", "VARCHAR(128)"),
-                ("cases", "target_file_path", "VARCHAR(512)"),
-                ("cases", "authorization_status", "VARCHAR(32) DEFAULT 'Pending'"),
-            ]:
-                try:
-                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_def}"))
-                    conn.commit()
-                except Exception:
-                    pass
-    except Exception:
-        pass
+        from app.core.migration import run_schema_migrations
+        run_schema_migrations(engine)
+    except Exception as e:
+        import logging
+        logging.getLogger("tracex.database").warning(f"Schema verification note: {e}")
 
-# Run schema check once on import
-ensure_schema_columns()
 
 def get_db():
     db = SessionLocal()

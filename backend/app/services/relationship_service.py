@@ -74,175 +74,239 @@ class RelationshipService:
                 }
             })
 
-        # 2. Contextual Entity Nodes (User, Device, Findings)
-        entity_nodes = [
-            {
-                "id": "node-user-admin",
-                "type": "forensicNode",
-                "position": {"x": 420.0, "y": 80.0},
-                "data": {
-                    "label": "USER: ADMIN",
-                    "subtitle": "WORKSTATION-CORP\\Admin (Interactive Logon)",
-                    "nodeType": "user",
-                    "risk": "HIGH",
-                    "timestamp": "09:40:12 AM",
-                    "evidenceId": "ev-005",
-                    "entity_type": "User",
-                    "file_type": "USER_IDENTITY",
-                    "is_suspicious": False,
-                    "integrity": "VERIFIED",
-                    "severity": "HIGH",
-                    "details": {
-                        "Account": "Admin",
-                        "SID": "S-1-5-21-392810-1001",
-                        "Logon Type": "Type 2 (Interactive Console)",
-                        "Session ID": "0"
-                    }
-                }
-            },
-            {
-                "id": "node-usb-device",
-                "type": "forensicNode",
-                "position": {"x": 40.0, "y": 260.0},
-                "data": {
-                    "label": "USB DEVICE",
-                    "subtitle": "Kingston DataTraveler 3.0 (Drive E:\\)",
-                    "nodeType": "device",
-                    "risk": "HIGH",
-                    "timestamp": "09:45:10 AM",
-                    "evidenceId": "ev-007",
-                    "entity_type": "Device",
-                    "file_type": "REMOVABLE_STORAGE",
-                    "is_suspicious": True,
-                    "integrity": "VERIFIED",
-                    "severity": "HIGH",
-                    "details": {
-                        "Vendor ID": "VID_0951",
-                        "Product ID": "PID_1666",
-                        "Device Serial": "001A4D5978C1",
-                        "Assigned Drive": "E:\\ (FAT32)"
-                    }
-                }
-            },
-            {
-                "id": "node-finding-exfil",
-                "type": "forensicNode",
-                "position": {"x": 420.0, "y": 560.0},
-                "data": {
-                    "label": "EXFILTRATION SEQUENCE",
-                    "subtitle": "Correlated Attack Sequence (MITRE T1052.001)",
-                    "nodeType": "event",
-                    "risk": "CRITICAL",
-                    "timestamp": "09:55:04 AM",
-                    "evidenceId": "ev-001",
-                    "entity_type": "Finding",
-                    "file_type": "CORRELATED_FINDING",
-                    "is_suspicious": True,
-                    "integrity": "VERIFIED",
-                    "severity": "CRITICAL",
-                    "details": {
-                        "Sequence Stages": "5 Observed Steps",
-                        "Confidence Level": "High (Cross-Log Correlation)",
-                        "Mitre Technique": "T1052.001 (Exfiltration over Physical Medium)",
-                        "Impact": "Classified IP Extraction & Log Erasure"
-                    }
-                }
-            }
-        ]
-        nodes.extend(entity_nodes)
+        # Check if this is the predefined demo case
+        is_demo_case = (case_id == "CASE-2026-001" and any(e.id == "ev-001" for e in evidence_list))
 
-        # 3. Meaningful Typed Edges with DFIR Explanations
-        semantic_edges = [
-            {
-                "id": "edge-usb-log",
-                "source": "node-usb-device",
-                "target": "ev-007",
-                "label": "ASSOCIATED_WITH",
-                "relationship_type": "ASSOCIATED_WITH",
-                "explanation": "SetupAPI and USBSTOR hardware registry enumeration registered this physical device serial.",
-                "confidence": 0.99,
-                "animated": False,
-                "style": {"stroke": "#3B82F6", "strokeWidth": 2}
-            },
-            {
-                "id": "edge-usb-transfer",
-                "source": "ev-007",
-                "target": "ev-001",
-                "label": "RELATED_TO",
-                "relationship_type": "RELATED_TO",
-                "explanation": "Confidential file read occurred within 128s of Kingston USB volume mount.",
-                "confidence": 0.95,
-                "animated": True,
-                "style": {"stroke": "#EF4444", "strokeWidth": 2.5}
-            },
-            {
-                "id": "edge-user-access",
-                "source": "node-user-admin",
-                "target": "ev-001",
-                "label": "ACCESSED",
-                "relationship_type": "ACCESSED",
-                "explanation": "Interactive session handle opened read stream on classified blueprint.",
-                "confidence": 0.98,
-                "animated": False,
-                "style": {"stroke": "#F59E0B", "strokeWidth": 2}
-            },
-            {
-                "id": "edge-user-word",
-                "source": "node-user-admin",
-                "target": "ev-004",
-                "label": "CREATED",
-                "relationship_type": "CREATED",
-                "explanation": "Benign quarterly draft created via Microsoft Word template at 09:43.",
-                "confidence": 0.90,
-                "animated": False,
-                "style": {"stroke": "#10B981", "strokeWidth": 1.5}
-            },
-            {
-                "id": "edge-browser-exe",
-                "source": "ev-006",
-                "target": "ev-003",
-                "label": "DERIVED_FROM",
-                "relationship_type": "DERIVED_FROM",
-                "explanation": "Chromium cache recorded download URL directly staging binary into Temp folder.",
-                "confidence": 0.88,
-                "animated": True,
-                "style": {"stroke": "#F59E0B", "strokeWidth": 2}
-            },
-            {
-                "id": "edge-exe-log",
-                "source": "ev-003",
-                "target": "ev-005",
-                "label": "CAUSED_BY",
-                "relationship_type": "CAUSED_BY",
-                "explanation": "Explicit Sysmon PID 4892 telemetry confirms suspicious.exe initiated audit log clearing commands.",
-                "confidence": 0.99,
-                "animated": True,
-                "style": {"stroke": "#EF4444", "strokeWidth": 2.5}
-            },
-            {
-                "id": "edge-exe-delete",
-                "source": "ev-003",
-                "target": "node-finding-exfil",
-                "label": "MODIFIED",
-                "relationship_type": "MODIFIED",
-                "explanation": "VSSAdmin shadow copies purged to eliminate forensic restore points.",
-                "confidence": 0.96,
-                "animated": True,
-                "style": {"stroke": "#EF4444", "strokeWidth": 2}
-            },
-            {
-                "id": "edge-pdf-finding",
-                "source": "ev-001",
-                "target": "node-finding-exfil",
-                "label": "ASSOCIATED_WITH",
-                "relationship_type": "ASSOCIATED_WITH",
-                "explanation": "Primary exfiltration target confirming unauthorized duplicate creation.",
-                "confidence": 0.97,
-                "animated": False,
-                "style": {"stroke": "#EF4444", "strokeWidth": 2}
-            }
-        ]
-        edges.extend(semantic_edges)
+        if is_demo_case:
+            # 2. Contextual Entity Nodes (Demo Mode)
+            entity_nodes = [
+                {
+                    "id": "node-user-admin",
+                    "type": "forensicNode",
+                    "position": {"x": 420.0, "y": 80.0},
+                    "data": {
+                        "label": "USER: ADMIN",
+                        "subtitle": "WORKSTATION-CORP\\Admin (Interactive Logon)",
+                        "nodeType": "user",
+                        "risk": "HIGH",
+                        "timestamp": "09:40:12 AM",
+                        "evidenceId": "ev-005",
+                        "entity_type": "User",
+                        "file_type": "USER_IDENTITY",
+                        "is_suspicious": False,
+                        "integrity": "VERIFIED",
+                        "severity": "HIGH",
+                        "details": {
+                            "Account": "Admin",
+                            "SID": "S-1-5-21-392810-1001",
+                            "Logon Type": "Type 2 (Interactive Console)",
+                            "Session ID": "0"
+                        }
+                    }
+                },
+                {
+                    "id": "node-usb-device",
+                    "type": "forensicNode",
+                    "position": {"x": 40.0, "y": 260.0},
+                    "data": {
+                        "label": "USB DEVICE",
+                        "subtitle": "Kingston DataTraveler 3.0 (Drive E:\\)",
+                        "nodeType": "device",
+                        "risk": "HIGH",
+                        "timestamp": "09:45:10 AM",
+                        "evidenceId": "ev-007",
+                        "entity_type": "Device",
+                        "file_type": "REMOVABLE_STORAGE",
+                        "is_suspicious": True,
+                        "integrity": "VERIFIED",
+                        "severity": "HIGH",
+                        "details": {
+                            "Vendor ID": "VID_0951",
+                            "Product ID": "PID_1666",
+                            "Device Serial": "001A4D5978C1",
+                            "Assigned Drive": "E:\\ (FAT32)"
+                        }
+                    }
+                },
+                {
+                    "id": "node-finding-exfil",
+                    "type": "forensicNode",
+                    "position": {"x": 420.0, "y": 560.0},
+                    "data": {
+                        "label": "EXFILTRATION SEQUENCE",
+                        "subtitle": "Correlated Attack Sequence (MITRE T1052.001)",
+                        "nodeType": "event",
+                        "risk": "CRITICAL",
+                        "timestamp": "09:55:04 AM",
+                        "evidenceId": "ev-001",
+                        "entity_type": "Finding",
+                        "file_type": "CORRELATED_FINDING",
+                        "is_suspicious": True,
+                        "integrity": "VERIFIED",
+                        "severity": "CRITICAL",
+                        "details": {
+                            "Sequence Stages": "5 Observed Steps",
+                            "Confidence Level": "High (Cross-Log Correlation)",
+                            "Mitre Technique": "T1052.001 (Exfiltration over Physical Medium)",
+                            "Impact": "Classified IP Extraction & Log Erasure"
+                        }
+                    }
+                }
+            ]
+            nodes.extend(entity_nodes)
+
+            # 3. Meaningful Typed Edges with DFIR Explanations (Demo Mode)
+            semantic_edges = [
+                {
+                    "id": "edge-usb-log",
+                    "source": "node-usb-device",
+                    "target": "ev-007",
+                    "label": "ASSOCIATED_WITH",
+                    "relationship_type": "ASSOCIATED_WITH",
+                    "explanation": "SetupAPI and USBSTOR hardware registry enumeration registered this physical device serial.",
+                    "confidence": 0.99,
+                    "animated": False,
+                    "style": {"stroke": "#3B82F6", "strokeWidth": 2}
+                },
+                {
+                    "id": "edge-usb-transfer",
+                    "source": "ev-007",
+                    "target": "ev-001",
+                    "label": "RELATED_TO",
+                    "relationship_type": "RELATED_TO",
+                    "explanation": "Confidential file read occurred within 128s of Kingston USB volume mount.",
+                    "confidence": 0.95,
+                    "animated": True,
+                    "style": {"stroke": "#EF4444", "strokeWidth": 2.5}
+                },
+                {
+                    "id": "edge-user-access",
+                    "source": "node-user-admin",
+                    "target": "ev-001",
+                    "label": "ACCESSED",
+                    "relationship_type": "ACCESSED",
+                    "explanation": "Interactive session handle opened read stream on classified blueprint.",
+                    "confidence": 0.98,
+                    "animated": False,
+                    "style": {"stroke": "#F59E0B", "strokeWidth": 2}
+                },
+                {
+                    "id": "edge-user-word",
+                    "source": "node-user-admin",
+                    "target": "ev-004",
+                    "label": "CREATED",
+                    "relationship_type": "CREATED",
+                    "explanation": "Benign quarterly draft created via Microsoft Word template at 09:43.",
+                    "confidence": 0.90,
+                    "animated": False,
+                    "style": {"stroke": "#10B981", "strokeWidth": 1.5}
+                },
+                {
+                    "id": "edge-browser-exe",
+                    "source": "ev-006",
+                    "target": "ev-003",
+                    "label": "DERIVED_FROM",
+                    "relationship_type": "DERIVED_FROM",
+                    "explanation": "Chromium cache recorded download URL directly staging binary into Temp folder.",
+                    "confidence": 0.88,
+                    "animated": True,
+                    "style": {"stroke": "#F59E0B", "strokeWidth": 2}
+                },
+                {
+                    "id": "edge-exe-log",
+                    "source": "ev-003",
+                    "target": "ev-005",
+                    "label": "CAUSED_BY",
+                    "relationship_type": "CAUSED_BY",
+                    "explanation": "Explicit Sysmon PID 4892 telemetry confirms suspicious.exe initiated audit log clearing commands.",
+                    "confidence": 0.99,
+                    "animated": True,
+                    "style": {"stroke": "#EF4444", "strokeWidth": 2.5}
+                },
+                {
+                    "id": "edge-exe-delete",
+                    "source": "ev-003",
+                    "target": "node-finding-exfil",
+                    "label": "MODIFIED",
+                    "relationship_type": "MODIFIED",
+                    "explanation": "VSSAdmin shadow copies purged to eliminate forensic restore points.",
+                    "confidence": 0.96,
+                    "animated": True,
+                    "style": {"stroke": "#EF4444", "strokeWidth": 2}
+                },
+                {
+                    "id": "edge-pdf-finding",
+                    "source": "ev-001",
+                    "target": "node-finding-exfil",
+                    "label": "ASSOCIATED_WITH",
+                    "relationship_type": "ASSOCIATED_WITH",
+                    "explanation": "Primary exfiltration target confirming unauthorized duplicate creation.",
+                    "confidence": 0.97,
+                    "animated": False,
+                    "style": {"stroke": "#EF4444", "strokeWidth": 2}
+                }
+            ]
+            edges.extend(semantic_edges)
+        else:
+            # Real Forensic Investigation Mode
+            from app.models.finding import Finding
+            findings = db.query(Finding).filter(Finding.case_id == case_id).all()
+            for i, f in enumerate(findings):
+                node_id = f"node-find-{f.id}"
+                nodes.append({
+                    "id": node_id,
+                    "type": "forensicNode",
+                    "position": {"x": 300.0 + (i % 3) * 220.0, "y": 420.0 + (i // 3) * 120.0},
+                    "data": {
+                        "label": f.title[:30],
+                        "subtitle": f"{f.severity} • {f.category}",
+                        "nodeType": "event",
+                        "risk": f.severity.upper(),
+                        "timestamp": f.created_at.strftime("%H:%M:%S") if f.created_at else "N/A",
+                        "evidenceId": f.evidence_id,
+                        "entity_type": "Finding",
+                        "file_type": "FINDING",
+                        "is_suspicious": True,
+                        "integrity": "VERIFIED",
+                        "severity": f.severity.upper(),
+                        "details": {
+                            "Reason": f.reason,
+                            "Confidence": f.confidence,
+                            "Mitre": f.mitre_technique or "N/A"
+                        }
+                    }
+                })
+                if f.evidence_id and any(e.id == f.evidence_id for e in evidence_list):
+                    edges.append({
+                        "id": f"edge-find-{f.id}",
+                        "source": node_id,
+                        "target": f.evidence_id,
+                        "label": "EVIDENCE_OF",
+                        "relationship_type": "EVIDENCE_OF",
+                        "explanation": f"Finding correlates to evidence artifact {f.evidence_id}",
+                        "confidence": 0.95,
+                        "animated": True,
+                        "style": {"stroke": "#EF4444" if f.severity in ["Critical", "High"] else "#3B82F6", "strokeWidth": 2}
+                    })
+
+            for rel in relationships:
+                src = rel.source_id or rel.source_evidence_id
+                tgt = rel.target_id or rel.target_evidence_id
+                if src and tgt:
+                    edges.append({
+                        "id": f"rel-{rel.id}",
+                        "source": src,
+                        "target": tgt,
+                        "label": rel.label or rel.relationship_type,
+                        "relationship_type": rel.relationship_type,
+                        "explanation": rel.explanation or f"Forensic link: {rel.relationship_type}",
+                        "confidence": float(rel.confidence or 1.0),
+                        "animated": rel.relationship_type in ["RELATED_TO", "TRANSFERS", "EXFILTRATES"],
+                        "style": {
+                            "stroke": "#EF4444" if rel.relationship_type in ["TRANSFERS", "EXFILTRATES", "CAUSED_BY"] else "#3B82F6",
+                            "strokeWidth": 2
+                        }
+                    })
 
         return {
             "nodes": nodes,

@@ -29,5 +29,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD sh -c "curl -f http://localhost:\${PORT:-8000}/health || curl -f http://localhost:\${PORT:-8000}/api/health || exit 1"
 
-# Run FastAPI backend via Uvicorn (auto-seeds database on startup and binds to $PORT)
-CMD ["sh", "-c", "python seed.py && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Run FastAPI backend via Uvicorn (verifies schema migrations, seeds demo if needed, binds to $PORT)
+CMD ["sh", "-c", "python seed.py || true && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

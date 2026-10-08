@@ -53,6 +53,11 @@ class ClusteringService:
 
             seq_summary = " → ".join(steps) if steps else "Sequential host anomalous actions"
 
+            primary_ev_ids = list(dict.fromkeys([se.evidence_id for se in suspicious_events if se.evidence_id]))
+            if not primary_ev_ids:
+                case_evs = db.query(Evidence.id).filter(Evidence.case_id == case_id).all()
+                primary_ev_ids = [e[0] for e in case_evs]
+
             primary_cluster = ActivityCluster(
                 case_id=case_id,
                 title="Primary Exfiltration & Anti-Forensic Sequence",
@@ -62,10 +67,10 @@ class ClusteringService:
                 event_count=len(suspicious_events),
                 severity="Critical",
                 confidence="High",
-                confidence_reason="Five chronologically linked events across NTFS journals, USB setup logs, and Sysmon process events.",
+                confidence_reason="Chronologically linked events across NTFS journals, USB setup logs, and system events.",
                 sequence_summary=seq_summary,
                 event_ids=json.dumps(ev_ids),
-                evidence_ids=json.dumps(["ev-001", "ev-003", "ev-005", "ev-007"]),
+                evidence_ids=json.dumps(primary_ev_ids),
                 created_at=datetime.now(timezone.utc)
             )
             clusters.append(primary_cluster)
@@ -75,6 +80,11 @@ class ClusteringService:
         if user_events:
             u_start = user_events[0].timestamp
             u_end = user_events[-1].timestamp
+            user_ev_ids = list(dict.fromkeys([e.evidence_id for e in user_events if e.evidence_id]))
+            if not user_ev_ids:
+                case_evs = db.query(Evidence.id).filter(Evidence.case_id == case_id, Evidence.file_type == "document").all()
+                user_ev_ids = [e[0] for e in case_evs]
+
             user_cluster = ActivityCluster(
                 case_id=case_id,
                 title="Host Interactive Session Baseline",
@@ -87,7 +97,7 @@ class ClusteringService:
                 confidence_reason="Standard Windows Security event logs (Event IDs 4624, 4647).",
                 sequence_summary="09:40 User Login → 09:43 File Created → 10:02 User Logout",
                 event_ids=json.dumps([e.id for e in user_events]),
-                evidence_ids=json.dumps(["ev-004", "ev-005"]),
+                evidence_ids=json.dumps(user_ev_ids),
                 created_at=datetime.now(timezone.utc)
             )
             clusters.append(user_cluster)
