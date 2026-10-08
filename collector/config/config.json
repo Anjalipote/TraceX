@@ -1,0 +1,7 @@
+{
+  "backend_url": "http://127.0.0.1:8000/api",
+  "case_id": "CASE-2026-001",
+  "investigation_path": "C:\\TraceX-Test",
+  "collector_version": "v3.0.0-win64",
+  "timeout_sec": 30
+}

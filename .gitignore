@@ -29,9 +29,18 @@ agent/agent_test_evidence/
 
 # Node / Vite Frontend
 node_modules/
-dist/
+/dist/
 dist-ssr/
 *.local
+
+# PyInstaller build artifacts
+collector/build/
+collector/build_tmp/
+collector/evidence/
+collector/dist/evidence/
+TraceXCollector.spec
+!collector/dist/
+!collector/dist/TraceXCollector.exe
 
 # Logs
 logs/
