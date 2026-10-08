@@ -44,7 +44,7 @@ interface TimelineEventData {
 }
 
 export const TimelinePage: React.FC = () => {
-  const { timeline: appTimeline, investigationMode } = useApp();
+  const { timeline: appTimeline, investigationMode, currentCaseId } = useApp();
   const [activeFilter, setActiveFilter] = useState<string>('ALL');
   const [selectedFinding, setSelectedFinding] = useState<CorrelatedInvestigationFinding | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -167,13 +167,14 @@ export const TimelinePage: React.FC = () => {
 
   React.useEffect(() => {
     let isMounted = true;
-    api.getTimeline().then((res: any) => {
+    const targetCaseId = investigationMode === 'real' ? 'TRX-001' : (currentCaseId || 'CASE-2026-001');
+    api.getTimeline(targetCaseId).then((res: any) => {
       if (isMounted && res && Array.isArray(res)) {
         setDbTimelineEvents(res);
       }
     }).catch(() => {});
     return () => { isMounted = false; };
-  }, []);
+  }, [investigationMode, currentCaseId]);
 
   const parsedDbEvents: TimelineEventData[] = dbTimelineEvents.map(e => {
     const dt = new Date(e.timestamp);
@@ -346,7 +347,7 @@ export const TimelinePage: React.FC = () => {
         {allEvents.length === 0 ? (
           <div className="p-12 text-center bg-white rounded-2xl border border-[#E2E8F0] shadow-xs space-y-2">
             <Clock className="w-8 h-8 text-[#94A3B8] mx-auto opacity-60" />
-            <h3 className="text-sm font-bold text-[#1E293B]">No forensic events collected.</h3>
+            <h3 className="text-sm font-bold text-[#1E293B]">No historical forensic events found for this file.</h3>
             <p className="text-xs text-[#64748B] max-w-md mx-auto">
               No timeline artifacts have been acquired for this investigation yet. Run a historical scan or start live monitoring to capture events.
             </p>

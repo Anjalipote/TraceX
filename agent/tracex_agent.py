@@ -199,6 +199,81 @@ class TraceXAgent:
             "summary": summary
         }
 
+    def compare_text_content(self, baseline_path: str, modified_path: str) -> Dict[str, Any]:
+        """Line-by-line textual diff extraction for text/code/scripts/data files."""
+        def read_lines(p: str) -> List[str]:
+            for enc in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
+                try:
+                    with open(p, "r", encoding=enc, errors="replace") as f:
+                        return f.read().splitlines()
+                except Exception:
+                    continue
+            return []
+
+        base_lines = read_lines(baseline_path)
+        mod_lines = read_lines(modified_path)
+        matcher = difflib.SequenceMatcher(None, base_lines, mod_lines)
+        diff_lines = []
+        added = []
+        removed = []
+        total_add = 0
+        total_del = 0
+
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == 'equal':
+                for l in base_lines[i1:i2]: diff_lines.append({"type": "unchanged", "text": l})
+            elif tag == 'replace':
+                for l in base_lines[i1:i2]:
+                    diff_lines.append({"type": "removed", "text": l})
+                    removed.append(l)
+                    total_del += 1
+                for l in mod_lines[j1:j2]:
+                    diff_lines.append({"type": "added", "text": l})
+                    added.append(l)
+                    total_add += 1
+            elif tag == 'delete':
+                for l in base_lines[i1:i2]:
+                    diff_lines.append({"type": "removed", "text": l})
+                    removed.append(l)
+                    total_del += 1
+            elif tag == 'insert':
+                for l in mod_lines[j1:j2]:
+                    diff_lines.append({"type": "added", "text": l})
+                    added.append(l)
+                    total_add += 1
+
+        has_changes = total_add > 0 or total_del > 0
+        return {
+            "has_changes": has_changes,
+            "total_lines_baseline": len(base_lines),
+            "total_lines_modified": len(mod_lines),
+            "total_additions": total_add,
+            "total_deletions": total_del,
+            "added_lines": added[:50],
+            "removed_lines": removed[:50],
+            "diff_lines": diff_lines[:200],
+            "summary": f"Altered content: {total_add} additions, {total_del} deletions." if has_changes else "Content matches baseline.",
+            "changed_pages": [1] if has_changes else [],
+            "pages": [{
+                "page_number": 1,
+                "has_changes": has_changes,
+                "added_lines": added[:50],
+                "removed_lines": removed[:50],
+                "diff_lines": diff_lines[:200]
+            }]
+        }
+
+    def compare_generic_content(self, baseline_path: str, modified_path: str, ext: str) -> Dict[str, Any]:
+        """Generic diffing across PDFs, text files, and code."""
+        if not os.path.exists(baseline_path) or not os.path.exists(modified_path):
+            return {"has_changes": False, "status": "Unavailable", "message": "Previous version unavailable."}
+        if ext == ".pdf":
+            return self.compare_pdf_content(baseline_path, modified_path)
+        text_exts = {".txt", ".csv", ".tsv", ".json", ".xml", ".py", ".java", ".js", ".ts", ".html", ".css", ".md", ".log", ".bat", ".ps1", ".sh", ".yaml", ".yml"}
+        if ext in text_exts:
+            return self.compare_text_content(baseline_path, modified_path)
+        return {"has_changes": False, "status": "Binary", "summary": "Binary file modified."}
+
     def process_file_event(self, event_type: str, file_path: str, original_path: Optional[str] = None):
         """
         Normalizes a filesystem event, calculates hashes, checks baseline,
@@ -255,9 +330,9 @@ class TraceXAgent:
             if baseline_sha256 and sha256 and sha256 != baseline_sha256:
                 is_modified_from_baseline = True
                 
-                # If PDF, perform deep content diffing against baseline copy
-                if is_pdf and os.path.exists(cached_baseline_copy):
-                    pdf_diff = self.compare_pdf_content(cached_baseline_copy, norm_path)
+                # Perform content diffing against baseline copy for any supported file
+                if os.path.exists(cached_baseline_copy):
+                    pdf_diff = self.compare_generic_content(cached_baseline_copy, norm_path, ext)
             elif not baseline_info and sha256:
                 # Discovered existing file modified
                 self.baseline_manifest[norm_path] = {
@@ -994,32 +1069,35 @@ class AgentEventHandler(FileSystemEventHandler):
 
 def main():
     parser = argparse.ArgumentParser(description="TraceX Windows Endpoint Collection Agent")
-    parser.add_argument("command", choices=["start", "collect", "historical", "status", "simulate-pdf", "inspect"], help="Agent command")
+    parser.add_argument("command", choices=["start", "collect", "historical", "status", "simulate-pdf", "inspect", "verify", "monitor"], help="Agent command")
     parser.add_argument("--config", default="config.json", help="Path to config.json")
-    parser.add_argument("--file", default=None, help="Target file path to inspect/monitor")
+    parser.add_argument("--file", default=None, help="Target file path to inspect/monitor/verify")
     parser.add_argument("--dir", default=None, help="Directory to monitor/scan")
     parser.add_argument("--hours", type=int, default=24, help="Historical time window in hours")
     parser.add_argument("--case-id", default=None, help="Case ID to assign collection to")
+    parser.add_argument("target_path", nargs="?", default=None, help="Positional target file/folder path (optional)")
     args = parser.parse_args()
 
     agent = TraceXAgent(config_path=args.config)
+    target = args.file or args.target_path or (args.dir if (args.dir and os.path.isfile(args.dir)) else None)
+
     if args.dir:
         agent.monitored_paths = [args.dir]
-    elif args.file:
-        file_dir = os.path.dirname(os.path.abspath(args.file))
+    elif target:
+        file_dir = os.path.dirname(os.path.abspath(target)) if os.path.isfile(target) else os.path.abspath(target)
         if os.path.exists(file_dir):
             agent.monitored_paths = [file_dir]
+            
     if args.case_id:
         agent.case_id = args.case_id
 
-    if args.command == "start":
+    if args.command in ["start", "monitor"]:
         agent.start()
     elif args.command in ["collect", "historical"]:
         agent.run_historical_collection(hours=args.hours, case_id=args.case_id)
-    elif args.command == "inspect":
-        target = args.file or (args.dir if os.path.isfile(args.dir) else None)
+    elif args.command in ["inspect", "verify"]:
         if not target:
-            print("[Error] Please specify a file to inspect using --file <filepath>")
+            print("[Error] Please specify a file to inspect/verify using --file <filepath> or as a positional argument.")
             sys.exit(1)
         agent.inspect_target_file(target, case_id=args.case_id)
     elif args.command == "status":

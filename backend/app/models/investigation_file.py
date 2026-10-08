@@ -54,15 +54,23 @@ class InvestigationFile(Base):
     )
 
     def to_dict(self):
+        sz = self.file_size or 0
+        sz_fmt = f"{sz} bytes" if sz < 1024 else (f"{sz / 1024:.1f} KB" if sz < 1024 * 1024 else f"{sz / (1024 * 1024):.2f} MB")
         return {
             "id": self.id,
             "investigation_id": self.investigation_id,
+            "case_id": self.investigation_id,
             "computer_id": self.computer_id,
             "agent_id": self.agent_id,
             "original_file_path": self.original_file_path,
+            "target_file_path": self.original_file_path,
             "file_name": self.file_name,
             "extension": self.extension,
             "file_size": self.file_size,
+            "file_size_bytes": self.file_size,
+            "file_size_formatted": sz_fmt,
+            "file_exists": True,
+            "exists_on_disk": True,
             "current_sha256": self.current_sha256,
             "baseline_sha256": self.baseline_sha256,
             "is_hash_diverged": self.is_hash_diverged,

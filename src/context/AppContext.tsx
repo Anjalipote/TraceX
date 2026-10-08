@@ -46,6 +46,7 @@ interface AppContextType {
   };
   cases: CaseItem[];
   currentCase: CaseItem;
+  currentCaseId: string;
   selectCase: (caseId: string) => void;
   createCase: (newCase: { name: string; investigator: string; description: string; targetSystem: string }) => CaseItem;
   evidence: EvidenceItem[];
@@ -105,6 +106,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setInvestigationMode = (mode: 'real' | 'demo') => {
     setInvestigationModeState(mode);
     localStorage.setItem('tracex_investigation_mode', mode);
+    if (mode === 'real') {
+      setCurrentCaseId('TRX-001');
+    } else {
+      setCurrentCaseId('CASE-2026-001');
+    }
     showToast(
       mode === 'real' ? 'Real Forensic Mode Activated' : 'Demo Mode Activated',
       mode === 'real'
@@ -123,7 +129,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [cases, setCases] = useState<CaseItem[]>(INITIAL_CASES);
-  const [currentCaseId, setCurrentCaseId] = useState<string>('CASE-2026-001');
+  const [currentCaseId, setCurrentCaseId] = useState<string>(() => {
+    const savedMode = localStorage.getItem('tracex_investigation_mode');
+    return savedMode === 'demo' ? 'CASE-2026-001' : 'TRX-001';
+  });
   const [evidence, setEvidence] = useState<EvidenceItem[]>(() => {
     return localStorage.getItem('tracex_investigation_mode') === 'demo' ? INITIAL_EVIDENCE : [];
   });
@@ -413,6 +422,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       investigator,
       cases,
       currentCase,
+      currentCaseId,
       selectCase,
       createCase,
       evidence,

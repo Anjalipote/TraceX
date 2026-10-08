@@ -666,9 +666,10 @@ export const ForensicInvestigationPage: React.FC = () => {
               </span>
               <div className="flex flex-wrap gap-2">
                 {[
+                  { label: 'Downloads PDF (Trace_X_5_Page_Project_Explanation.pdf)', path: 'C:\\Users\\anjal\\Downloads\\Trace_X_5_Page_Project_Explanation.pdf' },
                   { label: 'Test PDF (C:\\TraceX-Test\\test_document.pdf)', path: 'C:\\TraceX-Test\\test_document.pdf' },
-                  { label: 'Confidential PDF (C:\\Users\\Employee\\Documents\\confidential.pdf)', path: 'C:\\Users\\Employee\\Documents\\confidential.pdf' },
-                  { label: 'Agent Workspace (agent_test_evidence\\test_document.pdf)', path: 'agent_test_evidence\\test_document.pdf' }
+                  { label: 'Agent Workspace PDF (agent_test_evidence\\test_document.pdf)', path: 'agent_test_evidence\\test_document.pdf' },
+                  { label: 'Agent Workspace Text (agent_test_evidence\\notes.txt)', path: 'agent_test_evidence\\notes.txt' }
                 ].map((preset) => (
                   <button
                     key={preset.label}
@@ -1070,9 +1071,13 @@ export const ForensicInvestigationPage: React.FC = () => {
                   }`}>
                     {selectedFileInfo.is_hash_diverged ? 'HASH DIVERGED' : 'HASH INTACT'}
                   </span>
-                  {selectedFileInfo.is_pdf && (
+                  {selectedFileInfo.is_pdf ? (
                     <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                       PDF DOCUMENT
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200 uppercase">
+                      {selectedFileInfo.extension || 'TARGET FILE'}
                     </span>
                   )}
                 </div>
@@ -1101,25 +1106,25 @@ export const ForensicInvestigationPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* PDF Content Analysis Notice */}
-              {selectedFileInfo.is_pdf && (
+              {/* Content Analysis Notice (PDF or any diffable file) */}
+              {(selectedFileInfo.is_pdf || selectedFileInfo.is_diffable) && (
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <FileDiff className="w-4 h-4 text-indigo-600" />
                     <span className="text-slate-700">
-                      {selectedFileInfo.baseline_sha256
-                        ? 'Baseline PDF version preserved in vault. Content comparison available.'
-                        : 'Previous PDF version unavailable. Content-level historical comparison cannot be performed.'}
+                      {selectedFileInfo.baseline_sha256 && selectedFileInfo.baseline_sha256 !== 'Unavailable'
+                        ? 'Baseline version preserved in vault. Content comparison available.'
+                        : 'Previous version unavailable. Content-level historical comparison cannot be performed.'}
                     </span>
                   </div>
                   {selectedFileInfo.is_hash_diverged && (
                     <button
                       type="button"
                       onClick={() => {
-                        const findingWithDiff = (results?.findings || []).find((f: any) => f.metadata?.pdf_diff_available);
+                        const findingWithDiff = (results?.findings || []).find((f: any) => f.metadata?.pdf_diff_available || f.metadata?.diff_data);
                         if (findingWithDiff) handleOpenDiff(findingWithDiff);
                         else {
-                          setSelectedDiffFilename(selectedFileInfo.target_file_path.split('\\').pop() || 'Document.pdf');
+                          setSelectedDiffFilename(selectedFileInfo.target_file_path.split('\\').pop() || 'Document');
                           setSelectedDiffBaselineSha(selectedFileInfo.baseline_sha256 || '');
                           setSelectedDiffCurrentSha(selectedFileInfo.current_sha256 || '');
                           setDiffModalOpen(true);
@@ -1127,7 +1132,7 @@ export const ForensicInvestigationPage: React.FC = () => {
                       }}
                       className="px-3 py-1 rounded-lg bg-indigo-600 text-white font-mono text-xs font-semibold hover:bg-indigo-700 transition-colors cursor-pointer shrink-0"
                     >
-                      Compare PDF Pages
+                      Compare Content Diff
                     </button>
                   )}
                 </div>
@@ -1215,70 +1220,76 @@ export const ForensicInvestigationPage: React.FC = () => {
             </div>
 
             <div className="divide-y divide-[#E2E8F0]">
-              {(results?.findings || []).map((finding: CorrelatedInvestigationFinding) => {
-                const isUsb = finding.category.toLowerCase().includes('usb') || finding.title.toLowerCase().includes('usb');
-                const isTransfer = finding.category.toLowerCase().includes('transfer') || finding.title.toLowerCase().includes('transfer');
-                const hasDiff = finding.metadata?.pdf_diff_available;
+              {(results?.findings || []).length === 0 ? (
+                <div className="p-8 text-center text-xs text-[#64748B] space-y-1">
+                  <p className="font-semibold text-[#1E293B]">No historical forensic events found for this file.</p>
+                  <p className="text-[11px] text-[#64748B]">Routine file activity recorded on endpoint; no suspicious correlation detected.</p>
+                </div>
+              ) : (
+                (results?.findings || []).map((finding: CorrelatedInvestigationFinding) => {
+                  const isUsb = finding.category.toLowerCase().includes('usb') || finding.title.toLowerCase().includes('usb');
+                  const isTransfer = finding.category.toLowerCase().includes('transfer') || finding.title.toLowerCase().includes('transfer');
+                  const hasDiff = finding.metadata?.pdf_diff_available || Boolean(finding.metadata?.diff_data);
 
-                return (
-                  <div
-                    key={finding.id}
-                    className="p-5 hover:bg-[#F8FAFC] transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 group"
-                  >
-                    <div 
-                      onClick={() => handleOpenFinding(finding)}
-                      className="flex items-start gap-4 min-w-0 cursor-pointer flex-1"
+                  return (
+                    <div
+                      key={finding.id}
+                      className="p-5 hover:bg-[#F8FAFC] transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 group"
                     >
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                        isUsb ? 'bg-amber-50 text-amber-600' : isTransfer ? 'bg-indigo-50 text-indigo-600' : 'bg-red-50 text-red-600'
-                      }`}>
-                        {isUsb ? <HardDrive className="w-5 h-5" /> : isTransfer ? <ArrowRight className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="text-xs font-bold text-[#1E293B] group-hover:text-indigo-600 transition-colors">
-                            {finding.title}
-                          </h4>
-                          {finding.is_live_agent ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              LIVE AGENT
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-mono text-slate-500 bg-slate-100 border border-slate-200">
-                              DEMO DATA
-                            </span>
+                      <div 
+                        onClick={() => handleOpenFinding(finding)}
+                        className="flex items-start gap-4 min-w-0 cursor-pointer flex-1"
+                      >
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                          isUsb ? 'bg-amber-50 text-amber-600' : isTransfer ? 'bg-indigo-50 text-indigo-600' : 'bg-red-50 text-red-600'
+                        }`}>
+                          {isUsb ? <HardDrive className="w-5 h-5" /> : isTransfer ? <ArrowRight className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-xs font-bold text-[#1E293B] group-hover:text-indigo-600 transition-colors">
+                              {finding.title}
+                            </h4>
+                            {finding.is_live_agent ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                LIVE AGENT
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-mono text-slate-500 bg-slate-100 border border-slate-200">
+                                DEMO DATA
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-[#64748B] mt-0.5">
+                            {finding.description}
+                          </p>
+                          {finding.why_suspicious && (
+                            <div className="mt-2 p-2 rounded-lg bg-amber-50/60 border border-amber-200/50 text-[11px] text-amber-900">
+                              <span className="font-bold text-amber-800">Why Flagged: </span>
+                              {finding.why_suspicious}
+                            </div>
                           )}
                         </div>
-                        <p className="text-xs text-[#64748B] mt-0.5">
-                          {finding.description}
-                        </p>
-                        {finding.why_suspicious && (
-                          <div className="mt-2 p-2 rounded-lg bg-amber-50/60 border border-amber-200/50 text-[11px] text-amber-900">
-                            <span className="font-bold text-amber-800">Why Flagged: </span>
-                            {finding.why_suspicious}
-                          </div>
-                        )}
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-3 shrink-0 self-end md:self-center">
-                      {hasDiff && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenDiff(finding);
-                          }}
-                          className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                        >
-                          <FileDiff className="w-3.5 h-3.5" />
-                          <span>Diff PDF</span>
-                        </button>
-                      )}
-                      <span className="text-xs text-[#94A3B8] font-mono hidden lg:inline">
-                        {finding.timestamp}
-                      </span>
+                      <div className="flex items-center gap-3 shrink-0 self-end md:self-center">
+                        {hasDiff && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenDiff(finding);
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <FileDiff className="w-3.5 h-3.5" />
+                            <span>Diff Content</span>
+                          </button>
+                        )}
+                        <span className="text-xs text-[#94A3B8] font-mono hidden lg:inline">
+                          {finding.timestamp}
+                        </span>
                       <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
                         finding.severity === 'High' || finding.severity === 'Critical'
                           ? 'bg-red-50 text-red-600 border border-red-200'
@@ -1293,7 +1304,7 @@ export const ForensicInvestigationPage: React.FC = () => {
                     </div>
                   </div>
                 );
-              })}
+              }))}
             </div>
           </div>
 

@@ -81,7 +81,10 @@ class SelectFileResponse(BaseModel):
     file_path: str
     file_name: str
     file_exists: bool
+    exists_on_disk: bool = True
     file_size: int
+    file_size_formatted: Optional[str] = None
+    file_owner: Optional[str] = None
     current_sha256: str
     creation_time: str
     modification_time: str
@@ -89,6 +92,7 @@ class SelectFileResponse(BaseModel):
     baseline_sha256: str
     is_hash_diverged: bool
     is_pdf: bool
+    is_diffable: Optional[bool] = False
     usn_file_ref: str
     status: str
     message: str
@@ -333,7 +337,10 @@ def select_target_file(
             file_path=req.file_path,
             file_name=os.path.basename(req.file_path),
             file_exists=False,
+            exists_on_disk=False,
             file_size=0,
+            file_size_formatted="0 bytes",
+            file_owner="Unavailable",
             current_sha256="Unavailable",
             creation_time="Unavailable",
             modification_time="Unavailable",
@@ -341,9 +348,10 @@ def select_target_file(
             baseline_sha256="Unavailable",
             is_hash_diverged=False,
             is_pdf=req.file_path.lower().endswith(".pdf"),
+            is_diffable=False,
             usn_file_ref="Unavailable",
             status="Unavailable",
-            message=f"Target file not found on computer: {req.file_path}"
+            message=f"File not found on endpoint: {req.file_path}"
         )
 
     # File exists! Record into InvestigationFile
@@ -370,8 +378,8 @@ def select_target_file(
             modification_time=datetime.fromisoformat(inspection["modification_time"]) if inspection["modification_time"] != "Unavailable" else None,
             access_time=datetime.fromisoformat(inspection["access_time"]) if inspection["access_time"] != "Unavailable" else None,
             is_pdf=inspection["is_pdf"],
-            pdf_diff_available=bool((inspection.get("pdf_comparison") or {}).get("has_changes")),
-            pdf_comparison_summary=(inspection.get("pdf_comparison") or {}).get("message") or (inspection.get("pdf_comparison") or {}).get("summary"),
+            pdf_diff_available=bool((inspection.get("content_comparison") or inspection.get("pdf_comparison") or {}).get("has_changes")),
+            pdf_comparison_summary=(inspection.get("content_comparison") or inspection.get("pdf_comparison") or {}).get("message") or (inspection.get("content_comparison") or inspection.get("pdf_comparison") or {}).get("summary"),
             status="Investigating",
             reference_storage_path=req.reference_storage_path
         )
@@ -419,7 +427,10 @@ def select_target_file(
         file_path=inspection["file_path"],
         file_name=inspection["file_name"],
         file_exists=True,
+        exists_on_disk=True,
         file_size=inspection["file_size"],
+        file_size_formatted=inspection.get("file_size_formatted"),
+        file_owner=inspection.get("file_owner"),
         current_sha256=inspection["current_sha256"],
         creation_time=inspection["creation_time"],
         modification_time=inspection["modification_time"],
@@ -427,6 +438,7 @@ def select_target_file(
         baseline_sha256=str(inspection["baseline_sha256"]),
         is_hash_diverged=inspection["is_hash_diverged"],
         is_pdf=inspection["is_pdf"],
+        is_diffable=inspection.get("is_diffable", False),
         usn_file_ref=str(inspection.get("usn_metadata", {}).get("file_ref", "Unavailable") if isinstance(inspection.get("usn_metadata"), dict) else "Unavailable"),
         status="Target File Verified & Registered",
         message=f"Target file successfully verified on {req.computer_id}. SHA-256: {inspection['current_sha256'][:16]}..."
@@ -557,11 +569,11 @@ def execute_forensic_scan(
                     "atime": target_inspection["access_time"] if target_inspection["access_time"] != "Unavailable" else now_iso,
                     "usn_data": target_inspection.get("usn_metadata") if isinstance(target_inspection.get("usn_metadata"), dict) else None,
                     "source": "Target File NTFS Inspection",
-                    "pdf_diff": target_inspection.get("pdf_comparison")
+                    "pdf_diff": target_inspection.get("content_comparison") or target_inspection.get("pdf_comparison")
                 })
 
-                if target_inspection["is_pdf"]:
-                    pdf_comp = target_inspection.get("pdf_comparison") or {}
+                content_comp = target_inspection.get("content_comparison") or target_inspection.get("pdf_comparison") or {}
+                if target_inspection.get("is_diffable") or target_inspection.get("is_pdf") or content_comp.get("has_changes"):
                     ver_rec = FileVersion(
                         investigation_id=case_id,
                         computer_id=req.computer_id,
@@ -569,8 +581,8 @@ def execute_forensic_scan(
                         version_label="Current Inspection",
                         sha256=target_inspection["current_sha256"],
                         source="Live Forensic File Investigation",
-                        content_diff_summary=pdf_comp.get("summary") or pdf_comp.get("message"),
-                        changed_pages_json=pdf_comp.get("changed_pages", [])
+                        content_diff_summary=content_comp.get("summary") or content_comp.get("message"),
+                        changed_pages_json=content_comp.get("changed_pages", [])
                     )
                     db.add(ver_rec)
 
@@ -943,7 +955,33 @@ def get_investigation_results(
             telemetry_status=latest_job.artifacts_status if latest_job else None
         )
 
-    # Fallback to Demo Benchmark results if no DB findings yet
+    # Check whether this is a real endpoint investigation or demo benchmark
+    case = db.query(Case).filter((Case.id == case_id) | (Case.case_number == case_id)).first()
+    is_real = bool(
+        (case and (case.is_real_investigation or (case.collection_type in ["real", "live"])))
+        or (latest_job and latest_job.computer_id != "EMP-LT-001")
+        or (case_id != "CASE-2026-001")
+    )
+
+    if is_real:
+        candidate_files_count = len([e for e in db_events if e.category == "File System"])
+        usb_count = len([e for e in db_events if "USB" in (e.event_type or "") or e.category == "USB / Removable Storage"])
+        return InvestigationResultsResponse(
+            case_id=case_id,
+            computer_id=case.computer_id if (case and case.computer_id) else (latest_job.computer_id if latest_job else "Windows Endpoint"),
+            investigation_mode="historical",
+            collection_type="Live Agent",
+            suspicious_events_count=0,
+            usb_devices_count=usb_count,
+            files_accessed_count=candidate_files_count,
+            network_connections_count=0,
+            has_suspicious_activity=False,
+            summary="No historical forensic events found for this file." if candidate_files_count == 0 else f"TraceX investigated {candidate_files_count} file(s) and {usb_count} USB device(s). Routine endpoint telemetry recorded.",
+            findings=[],
+            telemetry_status=latest_job.artifacts_status if latest_job else None
+        )
+
+    # Fallback to Demo Benchmark results only for CASE-2026-001 demo mode
     demo_findings = [
         CorrelatedResult(
             id="TRX-FIND-001",

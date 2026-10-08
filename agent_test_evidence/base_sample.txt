@@ -1,0 +1,3 @@
+Line 1: Normal
+Line 2: Confidential text
+Line 3: End

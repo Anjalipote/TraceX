@@ -1220,8 +1220,26 @@ export const api = {
         return await res.json();
       }
     } catch {
-      // Fallback
+      // Network failure
     }
+
+    const isRealMode = caseId !== 'CASE-2026-001' || localStorage.getItem('tracex_investigation_mode') === 'real';
+    if (isRealMode) {
+      return {
+        case_id: caseId,
+        computer_id: 'Windows Endpoint',
+        investigation_mode: 'historical',
+        collection_type: 'Live Agent',
+        suspicious_events_count: 0,
+        usb_devices_count: 0,
+        files_accessed_count: 0,
+        network_connections_count: 0,
+        has_suspicious_activity: false,
+        summary: 'No historical forensic events found for this file.',
+        findings: []
+      };
+    }
+
     return {
       case_id: caseId,
       computer_id: 'EMP-LT-001',

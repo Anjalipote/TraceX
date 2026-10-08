@@ -52,6 +52,16 @@ class WindowsForensicCollector:
                 time.sleep(0.1 * (attempt + 1))
         return None
 
+    @staticmethod
+    def format_file_size(size_bytes: int) -> str:
+        """Formats file size into human-readable format."""
+        if size_bytes < 1024:
+            return f"{size_bytes} bytes"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f} KB ({size_bytes:,} bytes)"
+        else:
+            return f"{size_bytes / (1024 * 1024):.2f} MB ({size_bytes:,} bytes)"
+
     @classmethod
     def compare_pdf_files(cls, baseline_pdf_path: str, modified_pdf_path: str) -> Dict[str, Any]:
         """Page-by-page PDF textual diff extraction."""
@@ -139,6 +149,199 @@ class WindowsForensicCollector:
             "total_deletions": total_deletions,
             "pages": pages_diff,
             "summary": summary
+        }
+
+    @classmethod
+    def compare_text_files(cls, baseline_path: str, current_path: str) -> Dict[str, Any]:
+        """Line-by-line textual diff extraction for text, code, scripts, configuration, and data files."""
+        def read_text(p: str) -> List[str]:
+            for enc in ["utf-8", "utf-8-sig", "latin-1", "cp1252"]:
+                try:
+                    with open(p, "r", encoding=enc, errors="replace") as f:
+                        return f.read().splitlines()
+                except Exception:
+                    continue
+            return []
+
+        b_lines = read_text(baseline_path)
+        c_lines = read_text(current_path)
+
+        matcher = difflib.SequenceMatcher(None, b_lines, c_lines)
+        diff_lines = []
+        added_lines = []
+        removed_lines = []
+        total_additions = 0
+        total_deletions = 0
+
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == "equal":
+                for line in b_lines[i1:i2]:
+                    diff_lines.append({"type": "unchanged", "text": line})
+            elif tag == "replace":
+                for line in b_lines[i1:i2]:
+                    diff_lines.append({"type": "removed", "text": line})
+                    removed_lines.append(line)
+                    total_deletions += 1
+                for line in c_lines[j1:j2]:
+                    diff_lines.append({"type": "added", "text": line})
+                    added_lines.append(line)
+                    total_additions += 1
+            elif tag == "delete":
+                for line in b_lines[i1:i2]:
+                    diff_lines.append({"type": "removed", "text": line})
+                    removed_lines.append(line)
+                    total_deletions += 1
+            elif tag == "insert":
+                for line in c_lines[j1:j2]:
+                    diff_lines.append({"type": "added", "text": line})
+                    added_lines.append(line)
+                    total_additions += 1
+
+        has_changes = total_additions > 0 or total_deletions > 0
+        summary = (
+            f"Altered content: {total_additions} additions, {total_deletions} deletions across {len(c_lines)} lines."
+            if has_changes else "Content matches baseline."
+        )
+
+        return {
+            "has_changes": has_changes,
+            "total_lines_baseline": len(b_lines),
+            "total_lines_modified": len(c_lines),
+            "total_additions": total_additions,
+            "total_deletions": total_deletions,
+            "added_lines": added_lines[:50],
+            "removed_lines": removed_lines[:50],
+            "diff_lines": diff_lines[:200],
+            "summary": summary,
+            "changed_pages": [1] if has_changes else [],
+            "pages": [{
+                "page_number": 1,
+                "has_changes": has_changes,
+                "added_lines": added_lines[:50],
+                "removed_lines": removed_lines[:50],
+                "diff_lines": diff_lines[:200]
+            }]
+        }
+
+    @classmethod
+    def compare_office_files(cls, baseline_path: str, current_path: str, ext: str) -> Dict[str, Any]:
+        """Extracts text from Office files (.docx, .pptx, .xlsx) via zip archive XML inspection."""
+        import zipfile
+        import xml.etree.ElementTree as ET
+
+        def extract_zip_xml_text(path: str) -> str:
+            texts = []
+            try:
+                with zipfile.ZipFile(path, 'r') as zf:
+                    for name in zf.namelist():
+                        if name.endswith('.xml') and ('word/' in name or 'ppt/' in name or 'xl/' in name):
+                            xml_bytes = zf.read(name)
+                            root = ET.fromstring(xml_bytes)
+                            for elem in root.iter():
+                                if elem.text and elem.text.strip():
+                                    texts.append(elem.text.strip())
+            except Exception:
+                pass
+            return "\n".join(texts)
+
+        b_text = extract_zip_xml_text(baseline_path)
+        c_text = extract_zip_xml_text(current_path)
+        if not b_text and not c_text:
+            return {
+                "has_changes": False,
+                "status": "Unavailable",
+                "message": "Office document textual extraction unavailable without specialized converters."
+            }
+
+        b_lines = b_text.splitlines()
+        c_lines = c_text.splitlines()
+        matcher = difflib.SequenceMatcher(None, b_lines, c_lines)
+        diff_lines = []
+        added = []
+        removed = []
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == "equal":
+                for l in b_lines[i1:i2]: diff_lines.append({"type": "unchanged", "text": l})
+            elif tag in ["replace", "delete"]:
+                for l in b_lines[i1:i2]:
+                    diff_lines.append({"type": "removed", "text": l})
+                    removed.append(l)
+            if tag in ["replace", "insert"]:
+                for l in c_lines[j1:j2]:
+                    diff_lines.append({"type": "added", "text": l})
+                    added.append(l)
+
+        has_changes = len(added) > 0 or len(removed) > 0
+        return {
+            "has_changes": has_changes,
+            "total_lines_baseline": len(b_lines),
+            "total_lines_modified": len(c_lines),
+            "total_additions": len(added),
+            "total_deletions": len(removed),
+            "added_lines": added[:50],
+            "removed_lines": removed[:50],
+            "diff_lines": diff_lines[:200],
+            "summary": f"Office text comparison: {len(added)} additions, {len(removed)} deletions." if has_changes else "Content matches baseline.",
+            "changed_pages": [1] if has_changes else [],
+            "pages": [{"page_number": 1, "has_changes": has_changes, "added_lines": added[:50], "removed_lines": removed[:50], "diff_lines": diff_lines[:200]}]
+        }
+
+    @classmethod
+    def compare_generic_content(cls, baseline_path: Optional[str], current_path: str, ext: str) -> Dict[str, Any]:
+        """
+        Generic content-level comparison between baseline and current file for any supported type.
+        If baseline is unavailable, clearly states 'Previous version unavailable.'
+        """
+        if not baseline_path or not os.path.exists(baseline_path):
+            return {
+                "has_changes": False,
+                "status": "Unavailable",
+                "message": "Previous version unavailable. Content-level historical comparison cannot be performed."
+            }
+
+        if not os.path.exists(current_path):
+            return {
+                "has_changes": False,
+                "status": "Unavailable",
+                "message": "Current version file not found on disk."
+            }
+
+        ext = ext.lower()
+
+        # 1. PDF files
+        if ext == ".pdf":
+            return cls.compare_pdf_files(baseline_path, current_path)
+
+        # 2. Text / Code / Structured files
+        text_extensions = {
+            ".txt", ".csv", ".tsv", ".json", ".xml", ".html", ".htm", ".css",
+            ".py", ".java", ".cpp", ".c", ".h", ".cs", ".js", ".jsx", ".ts", ".tsx",
+            ".md", ".log", ".bat", ".ps1", ".sh", ".yaml", ".yml", ".ini", ".conf",
+            ".sql", ".env", ".toml", ".rst"
+        }
+
+        if ext in text_extensions:
+            return cls.compare_text_files(baseline_path, current_path)
+
+        # 3. Office Documents (.docx, .pptx, .xlsx)
+        if ext in [".docx", ".pptx", ".xlsx"]:
+            return cls.compare_office_files(baseline_path, current_path, ext)
+
+        # 4. Binary / Images / Archives (.jpg, .png, .zip, etc.)
+        b_size = os.path.getsize(baseline_path)
+        c_size = os.path.getsize(current_path)
+        b_hash = cls.calculate_file_hash(baseline_path)
+        c_hash = cls.calculate_file_hash(current_path)
+        has_hash_changed = bool(b_hash and c_hash and b_hash != c_hash)
+
+        return {
+            "has_changes": has_hash_changed,
+            "status": "Binary Comparison",
+            "summary": f"Binary file comparison: Size delta {c_size - b_size:+d} bytes. Hash {'diverged' if has_hash_changed else 'identical'}.",
+            "baseline_size": b_size,
+            "current_size": c_size,
+            "baseline_hash": b_hash,
+            "current_hash": c_hash
         }
 
     @classmethod
@@ -586,7 +789,8 @@ class WindowsForensicCollector:
                 "exists": False,
                 "file_path": abs_path,
                 "file_name": os.path.basename(abs_path),
-                "error": f"File not found on target computer: {abs_path}",
+                "error": f"File not found on endpoint: {abs_path}",
+                "message": f"File not found on endpoint: {abs_path}",
                 "status": "Unavailable"
             }
 
@@ -659,23 +863,14 @@ class WindowsForensicCollector:
             if baseline_sha and current_sha256 != "Unavailable" and current_sha256 != baseline_sha:
                 is_diverged = True
 
-        # 5. PDF Content Comparison
-        pdf_comparison = None
-        if ext == ".pdf":
-            cached_baseline = None
-            if baseline_cache_dir:
-                cand = os.path.join(baseline_cache_dir, f"base_{file_name}")
-                if os.path.exists(cand):
-                    cached_baseline = cand
+        # 5. Content Comparison across ANY file type (PDF, text, code, docs, etc.)
+        cached_baseline = None
+        if baseline_cache_dir:
+            cand = os.path.join(baseline_cache_dir, f"base_{file_name}")
+            if os.path.exists(cand):
+                cached_baseline = cand
 
-            if cached_baseline and os.path.exists(cached_baseline):
-                pdf_comparison = cls.compare_pdf_files(cached_baseline, abs_path)
-            else:
-                pdf_comparison = {
-                    "has_changes": False,
-                    "status": "Unavailable",
-                    "message": "Previous PDF version unavailable. Content-level historical comparison cannot be performed."
-                }
+        content_comparison = cls.compare_generic_content(cached_baseline, abs_path, ext)
 
         # 6. NTFS USN Metadata for this specific file
         file_usn = cls.read_file_usn_data(abs_path)
@@ -702,15 +897,24 @@ class WindowsForensicCollector:
         # 8. Correlated USB / Removable Media
         usb_res = cls.collect_usb_history()
 
+        diffable_extensions = {
+            ".pdf", ".txt", ".csv", ".tsv", ".json", ".xml", ".html", ".htm", ".css",
+            ".py", ".java", ".cpp", ".c", ".h", ".cs", ".js", ".jsx", ".ts", ".tsx",
+            ".md", ".log", ".bat", ".ps1", ".sh", ".yaml", ".yml", ".ini", ".conf",
+            ".docx", ".pptx", ".xlsx"
+        }
+
         return {
             "exists": True,
             "file_path": abs_path,
             "file_name": file_name,
             "extension": ext,
             "file_size": file_size,
+            "file_size_formatted": cls.format_file_size(file_size),
             "creation_time": ctime,
             "modification_time": mtime,
             "access_time": atime,
+            "access_time_note": "NTFS LastAccessTime updates may be disabled by Windows default (NtfsDisableLastAccessUpdate=1).",
             "volume": drive_letter,
             "filesystem": filesystem_type,
             "file_owner": file_owner,
@@ -719,7 +923,9 @@ class WindowsForensicCollector:
             "baseline_sha256": baseline_sha or "Unavailable",
             "is_hash_diverged": is_diverged,
             "is_pdf": ext == ".pdf",
-            "pdf_comparison": pdf_comparison,
+            "is_diffable": ext in diffable_extensions,
+            "content_comparison": content_comparison,
+            "pdf_comparison": content_comparison,  # Aliased for backwards compatibility
             "usn_metadata": file_usn or "Unavailable",
             "usn_volume_records": usn_records_for_file,
             "usn_stream_status": raw_usn_note or "Available",

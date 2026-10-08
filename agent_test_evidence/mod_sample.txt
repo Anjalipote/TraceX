@@ -1,0 +1,4 @@
+Line 1: Normal
+Line 2: ALTERED text by employee
+Line 3: End
+Line 4: Added secret
